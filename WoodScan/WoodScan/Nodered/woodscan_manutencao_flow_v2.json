@@ -1,0 +1,563 @@
+[
+  {
+    "id": "wc_tab_manutencao",
+    "type": "tab",
+    "label": "WoodScan - Manutencao",
+    "disabled": false,
+    "info": "Login da area de manutencao, registro de manutencao (grava em manutencoes.csv) e consulta da ultima manutencao de cada esteira."
+  },
+  {
+    "id": "wc_mt_c1",
+    "type": "comment",
+    "z": "wc_tab_manutencao",
+    "name": "1) Login da area de manutencao (so perfil manutencao)",
+    "info": "",
+    "x": 230,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "wc_mt_login_in",
+    "type": "http in",
+    "z": "wc_tab_manutencao",
+    "name": "POST /api/manutencao/login",
+    "url": "/api/manutencao/login",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 170,
+    "y": 90,
+    "wires": [
+      [
+        "wc_mt_login_sql"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_login_sql",
+    "type": "function",
+    "z": "wc_tab_manutencao",
+    "name": "Monta SQL do login",
+    "func": "var b = msg.payload || {};\nvar login = String(b.login || '').trim();\nvar senha = String(b.senha || '');\nif (!login || !senha) {\n    msg.statusCode = 401;\n    msg.payload = { erro: 'Informe login e senha da manutencao' };\n    return [null, msg];\n}\nmsg.topic = \"SELECT nome, login FROM usuarios WHERE login = ? AND senha_hash = SHA2(?, 256) AND perfil = 'manutencao'\";\nmsg.payload = [login, senha];\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 90,
+    "wires": [
+      [
+        "wc_mt_login_db"
+      ],
+      [
+        "wc_mt_resp1"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_login_db",
+    "type": "mysql",
+    "z": "wc_tab_manutencao",
+    "mydb": "wc_mysqldb",
+    "name": "Busca usuario",
+    "x": 630,
+    "y": 90,
+    "wires": [
+      [
+        "wc_mt_login_fn"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_login_fn",
+    "type": "function",
+    "z": "wc_tab_manutencao",
+    "name": "Confere credencial",
+    "func": "var linhas = Array.isArray(msg.payload) ? msg.payload : [];\nif (linhas.length === 0) {\n    msg.statusCode = 401;\n    msg.payload = { erro: 'Login ou senha invalidos, ou usuario sem perfil de manutencao' };\n    return msg;\n}\nmsg.statusCode = 200;\nmsg.payload = { nome: linhas[0].nome, login: linhas[0].login, perfil: 'manutencao' };\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 830,
+    "y": 90,
+    "wires": [
+      [
+        "wc_mt_resp1"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_resp1",
+    "type": "http response",
+    "z": "wc_tab_manutencao",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "x": 1060,
+    "y": 90,
+    "wires": []
+  },
+  {
+    "id": "wc_mt_c2",
+    "type": "comment",
+    "z": "wc_tab_manutencao",
+    "name": "2) Registrar manutencao (confere login e grava no CSV)",
+    "info": "",
+    "x": 230,
+    "y": 180,
+    "wires": []
+  },
+  {
+    "id": "wc_mt_post_in",
+    "type": "http in",
+    "z": "wc_tab_manutencao",
+    "name": "POST /api/manutencoes",
+    "url": "/api/manutencoes",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 230,
+    "wires": [
+      [
+        "wc_mt_valida"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_valida",
+    "type": "function",
+    "z": "wc_tab_manutencao",
+    "name": "Valida campos + SQL",
+    "func": "// Confere os campos do formulario e monta a consulta que valida o login.\n// Saida 1: segue para o MySQL | Saida 2: responde erro direto\nvar b = msg.payload || {};\nvar login = String(b.login || '').trim();\nvar senha = String(b.senha || '');\nvar esteira = String(b.esteira || '').trim();\nvar dataHora = String(b.data_hora || '').trim();\n\nfunction limpar(texto) {\n    // o CSV e separado por virgula: tira quebras de linha e troca virgula por ponto e virgula\n    return String(texto || '').replace(/[\\r\\n]+/g, ' ').replace(/,/g, ';').trim();\n}\nfunction erro(codigo, texto) {\n    msg.statusCode = codigo;\n    msg.payload = { erro: texto };\n    return [null, msg];\n}\n\nif (!login || !senha) return erro(401, 'Informe login e senha da manutencao');\nif (!/^[A-Za-z0-9_-]{1,20}$/.test(esteira)) return erro(400, 'Esteira invalida');\nif (!/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/.test(dataHora)) return erro(400, 'Data e hora invalidas');\n\nvar quando = new Date(dataHora);\nif (isNaN(quando.getTime())) return erro(400, 'Data e hora invalidas');\nif (quando.getTime() > Date.now() + 5 * 60 * 1000) return erro(400, 'A data da manutencao nao pode estar no futuro');\n\nmsg.registro = { esteira: esteira, dataHora: dataHora, observacao: limpar(b.observacao).slice(0, 200) };\n\n// A senha e comparada em hash (SHA-256) pelo proprio MySQL, e so vale perfil manutencao\nmsg.topic = \"SELECT nome, login FROM usuarios WHERE login = ? AND senha_hash = SHA2(?, 256) AND perfil = 'manutencao'\";\nmsg.payload = [login, senha];\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 370,
+    "y": 230,
+    "wires": [
+      [
+        "wc_mt_db"
+      ],
+      [
+        "wc_mt_resp2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_db",
+    "type": "mysql",
+    "z": "wc_tab_manutencao",
+    "mydb": "wc_mysqldb",
+    "name": "Busca usuario",
+    "x": 570,
+    "y": 230,
+    "wires": [
+      [
+        "wc_mt_confere"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_confere",
+    "type": "function",
+    "z": "wc_tab_manutencao",
+    "name": "Confere credencial",
+    "func": "// Saida 1: credencial ok | Saida 2: recusado\nvar linhas = Array.isArray(msg.payload) ? msg.payload : [];\nif (linhas.length === 0) {\n    msg.statusCode = 401;\n    msg.payload = { erro: 'Login ou senha invalidos, ou usuario sem perfil de manutencao' };\n    return [null, msg];\n}\nmsg.responsavel = { nome: String(linhas[0].nome).replace(/[\\r\\n]+/g, ' ').replace(/,/g, ';'), login: linhas[0].login };\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 770,
+    "y": 230,
+    "wires": [
+      [
+        "wc_mt_ler"
+      ],
+      [
+        "wc_mt_resp2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_ler",
+    "type": "file in",
+    "z": "wc_tab_manutencao",
+    "name": "Le manutencoes.csv",
+    "filename": "C:\\woodscan\\manutencoes.csv",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "none",
+    "allProps": false,
+    "x": 980,
+    "y": 230,
+    "wires": [
+      [
+        "wc_mt_linha"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_linha",
+    "type": "function",
+    "z": "wc_tab_manutencao",
+    "name": "Monta linha do CSV",
+    "func": "// msg.payload = conteudo atual do manutencoes.csv ('' se ainda nao existe)\nvar atual = typeof msg.payload === 'string' ? msg.payload : '';\nvar r = msg.registro;\nvar linha = [r.dataHora, r.esteira, msg.responsavel.nome, msg.responsavel.login, r.observacao].join(',') + '\\n';\n\nvar texto = '';\nif (!atual.trim()) texto += 'data_hora,esteira,responsavel,login,observacao\\n';\nelse if (!/\\n$/.test(atual)) texto += '\\n';\nmsg.payload = texto + linha;\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1200,
+    "y": 230,
+    "wires": [
+      [
+        "wc_mt_grava"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_grava",
+    "type": "file",
+    "z": "wc_tab_manutencao",
+    "name": "Grava em manutencoes.csv",
+    "filename": "C:\\woodscan\\manutencoes.csv",
+    "filenameType": "str",
+    "appendNewline": false,
+    "createDir": true,
+    "overwriteFile": "false",
+    "encoding": "none",
+    "x": 1440,
+    "y": 230,
+    "wires": [
+      [
+        "wc_mt_ok"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_ok",
+    "type": "function",
+    "z": "wc_tab_manutencao",
+    "name": "Resposta de sucesso",
+    "func": "msg.statusCode = 201;\nmsg.payload = {\n    status: 'manutencao registrada',\n    esteira: msg.registro.esteira,\n    data_hora: msg.registro.dataHora,\n    responsavel: msg.responsavel.nome\n};\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1680,
+    "y": 230,
+    "wires": [
+      [
+        "wc_mt_resp2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_resp2",
+    "type": "http response",
+    "z": "wc_tab_manutencao",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "x": 1680,
+    "y": 320,
+    "wires": []
+  },
+  {
+    "id": "wc_mt_catch_ler",
+    "type": "catch",
+    "z": "wc_tab_manutencao",
+    "name": "CSV nao encontrado",
+    "scope": [
+      "wc_mt_ler"
+    ],
+    "uncaught": false,
+    "x": 990,
+    "y": 320,
+    "wires": [
+      [
+        "wc_mt_vazio1"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_vazio1",
+    "type": "function",
+    "z": "wc_tab_manutencao",
+    "name": "Arquivo ainda nao existe?",
+    "func": "// So trata como \"arquivo vazio\" quando ele realmente nao existe.\n// Qualquer outro erro (ex.: arquivo aberto no Excel) vira resposta de erro,\n// para nunca gravar em cima de um arquivo que nao conseguimos ler.\nvar texto = (msg.error && msg.error.message) ? msg.error.message : '';\nif (texto.indexOf('ENOENT') !== -1) {\n    msg.payload = '';\n    return [msg, null];\n}\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Nao foi possivel ler o manutencoes.csv (ele esta aberto no Excel?): ' + texto };\nreturn [null, msg];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1230,
+    "y": 320,
+    "wires": [
+      [
+        "wc_mt_linha"
+      ],
+      [
+        "wc_mt_resp2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_c3",
+    "type": "comment",
+    "z": "wc_tab_manutencao",
+    "name": "3) Consulta: ultima manutencao de cada esteira + registros recentes",
+    "info": "",
+    "x": 270,
+    "y": 410,
+    "wires": []
+  },
+  {
+    "id": "wc_mt_get_in",
+    "type": "http in",
+    "z": "wc_tab_manutencao",
+    "name": "GET /api/manutencoes",
+    "url": "/api/manutencoes",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 460,
+    "wires": [
+      [
+        "wc_mt_ler2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_ler2",
+    "type": "file in",
+    "z": "wc_tab_manutencao",
+    "name": "Le manutencoes.csv",
+    "filename": "C:\\woodscan\\manutencoes.csv",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "none",
+    "allProps": false,
+    "x": 380,
+    "y": 460,
+    "wires": [
+      [
+        "wc_mt_lista"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_lista",
+    "type": "function",
+    "z": "wc_tab_manutencao",
+    "name": "Ultima por esteira + lista",
+    "func": "// msg.payload = conteudo do manutencoes.csv ('' se ainda nao existe)\n// Devolve a ultima manutencao de cada esteira e os registros mais recentes.\nvar texto = typeof msg.payload === 'string' ? msg.payload : '';\nvar registros = [];\ntexto.split(/\\r?\\n/).forEach(function (linha, i) {\n    if (i === 0 || !linha.trim()) return; // pula cabecalho e linhas vazias\n    var c = linha.split(',');\n    if (c.length < 4) return;\n    registros.push({\n        data_hora: c[0], esteira: c[1], responsavel: c[2], login: c[3],\n        observacao: c[4] || '',\n        tipo_manutencao: c[5] || '',   // so existe nas linhas novas\n        defeito: c[6] || ''\n    });\n});\n\n// mais recente primeiro (o formato AAAA-MM-DDTHH:MM ordena certo como texto)\nregistros.sort(function (a, b) { return a.data_hora < b.data_hora ? 1 : (a.data_hora > b.data_hora ? -1 : 0); });\n\nvar ultimas = {};\nregistros.forEach(function (r) {\n    if (!ultimas[r.esteira]) {\n        ultimas[r.esteira] = {\n            data_hora: r.data_hora, responsavel: r.responsavel, observacao: r.observacao,\n            tipo_manutencao: r.tipo_manutencao, defeito: r.defeito\n        };\n    }\n});\n\nvar filtro = msg.req && msg.req.query ? msg.req.query.esteira : '';\nvar lista = filtro ? registros.filter(function (r) { return r.esteira === filtro; }) : registros;\n\nmsg.statusCode = 200;\nmsg.payload = { ultimas: ultimas, registros: lista.slice(0, 50).map(function (r) {\n    return {\n        data_hora: r.data_hora, esteira: r.esteira, responsavel: r.responsavel,\n        observacao: r.observacao, tipo_manutencao: r.tipo_manutencao, defeito: r.defeito\n    };\n}) };\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 620,
+    "y": 460,
+    "wires": [
+      [
+        "wc_mt_resp3"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_resp3",
+    "type": "http response",
+    "z": "wc_tab_manutencao",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "x": 860,
+    "y": 460,
+    "wires": []
+  },
+  {
+    "id": "wc_mt_catch_ler2",
+    "type": "catch",
+    "z": "wc_tab_manutencao",
+    "name": "CSV nao encontrado",
+    "scope": [
+      "wc_mt_ler2"
+    ],
+    "uncaught": false,
+    "x": 390,
+    "y": 540,
+    "wires": [
+      [
+        "wc_mt_vazio2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_vazio2",
+    "type": "function",
+    "z": "wc_tab_manutencao",
+    "name": "Arquivo ainda nao existe?",
+    "func": "// So trata como \"arquivo vazio\" quando ele realmente nao existe.\n// Qualquer outro erro (ex.: arquivo aberto no Excel) vira resposta de erro,\n// para nunca gravar em cima de um arquivo que nao conseguimos ler.\nvar texto = (msg.error && msg.error.message) ? msg.error.message : '';\nif (texto.indexOf('ENOENT') !== -1) {\n    msg.payload = '';\n    return [msg, null];\n}\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Nao foi possivel ler o manutencoes.csv (ele esta aberto no Excel?): ' + texto };\nreturn [null, msg];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 640,
+    "y": 540,
+    "wires": [
+      [
+        "wc_mt_lista"
+      ],
+      [
+        "wc_mt_resp3"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_catch_login",
+    "type": "catch",
+    "z": "wc_tab_manutencao",
+    "name": "Erro no login",
+    "scope": [
+      "wc_mt_login_sql",
+      "wc_mt_login_db",
+      "wc_mt_login_fn"
+    ],
+    "uncaught": false,
+    "x": 150,
+    "y": 640,
+    "wires": [
+      [
+        "wc_mt_erro1"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_erro1",
+    "type": "function",
+    "z": "wc_tab_manutencao",
+    "name": "Monta resposta de erro",
+    "func": "var texto = (msg.error && msg.error.message) ? msg.error.message : 'erro desconhecido';\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Falha na manutencao: ' + texto };\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 640,
+    "wires": [
+      [
+        "wc_mt_resp1"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_catch_post",
+    "type": "catch",
+    "z": "wc_tab_manutencao",
+    "name": "Erro no registro",
+    "scope": [
+      "wc_mt_valida",
+      "wc_mt_db",
+      "wc_mt_confere",
+      "wc_mt_linha",
+      "wc_mt_grava",
+      "wc_mt_ok"
+    ],
+    "uncaught": false,
+    "x": 160,
+    "y": 700,
+    "wires": [
+      [
+        "wc_mt_erro2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_erro2",
+    "type": "function",
+    "z": "wc_tab_manutencao",
+    "name": "Monta resposta de erro",
+    "func": "var texto = (msg.error && msg.error.message) ? msg.error.message : 'erro desconhecido';\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Falha na manutencao: ' + texto };\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 700,
+    "wires": [
+      [
+        "wc_mt_resp2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_catch_get",
+    "type": "catch",
+    "z": "wc_tab_manutencao",
+    "name": "Erro na consulta",
+    "scope": [
+      "wc_mt_lista"
+    ],
+    "uncaught": false,
+    "x": 160,
+    "y": 760,
+    "wires": [
+      [
+        "wc_mt_erro3"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mt_erro3",
+    "type": "function",
+    "z": "wc_tab_manutencao",
+    "name": "Monta resposta de erro",
+    "func": "var texto = (msg.error && msg.error.message) ? msg.error.message : 'erro desconhecido';\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Falha na manutencao: ' + texto };\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 760,
+    "wires": [
+      [
+        "wc_mt_resp3"
+      ]
+    ]
+  }
+]

@@ -1,0 +1,208 @@
+[
+  {
+    "id": "wc_tab_historico_v3",
+    "type": "tab",
+    "label": "WoodScan - Historico (CSV)",
+    "disabled": false,
+    "info": "GET /api/historico?dias=7 -> turnos fechados vem do resumo_turnos.csv; o turno em andamento vem do contagem.csv."
+  },
+  {
+    "id": "wc_h3_in",
+    "type": "http in",
+    "z": "wc_tab_historico_v3",
+    "name": "GET /api/historico",
+    "url": "/api/historico",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 140,
+    "y": 120,
+    "wires": [
+      [
+        "wc_h3_lres"
+      ]
+    ]
+  },
+  {
+    "id": "wc_h3_lres",
+    "type": "file in",
+    "z": "wc_tab_historico_v3",
+    "name": "Le resumo_turnos.csv",
+    "filename": "C:\\woodscan\\resumo_turnos.csv",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "none",
+    "allProps": false,
+    "x": 370,
+    "y": 120,
+    "wires": [
+      [
+        "wc_h3_mv"
+      ]
+    ]
+  },
+  {
+    "id": "wc_h3_mv",
+    "type": "change",
+    "z": "wc_tab_historico_v3",
+    "name": "Guarda em msg.resumo",
+    "rules": [
+      {
+        "t": "set",
+        "p": "resumo",
+        "pt": "msg",
+        "to": "payload",
+        "tot": "msg"
+      }
+    ],
+    "action": "",
+    "property": "",
+    "from": "",
+    "to": "",
+    "reg": false,
+    "x": 590,
+    "y": 120,
+    "wires": [
+      [
+        "wc_h3_lcont"
+      ]
+    ]
+  },
+  {
+    "id": "wc_h3_catch_res",
+    "type": "catch",
+    "z": "wc_tab_historico_v3",
+    "name": "Resumo nao encontrado",
+    "scope": [
+      "wc_h3_lres"
+    ],
+    "uncaught": false,
+    "x": 380,
+    "y": 200,
+    "wires": [
+      [
+        "wc_h3_empty"
+      ]
+    ]
+  },
+  {
+    "id": "wc_h3_empty",
+    "type": "change",
+    "z": "wc_tab_historico_v3",
+    "name": "Resumo ainda nao existe: usa vazio",
+    "rules": [
+      {
+        "t": "set",
+        "p": "resumo",
+        "pt": "msg",
+        "to": "",
+        "tot": "str"
+      }
+    ],
+    "action": "",
+    "property": "",
+    "from": "",
+    "to": "",
+    "reg": false,
+    "x": 630,
+    "y": 200,
+    "wires": [
+      [
+        "wc_h3_lcont"
+      ]
+    ]
+  },
+  {
+    "id": "wc_h3_lcont",
+    "type": "file in",
+    "z": "wc_tab_historico_v3",
+    "name": "Le contagem.csv",
+    "filename": "C:\\woodscan\\contagem.csv",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "none",
+    "allProps": false,
+    "x": 830,
+    "y": 120,
+    "wires": [
+      [
+        "wc_h3_fn"
+      ]
+    ]
+  },
+  {
+    "id": "wc_h3_fn",
+    "type": "function",
+    "z": "wc_tab_historico_v3",
+    "name": "Monta historico",
+    "func": "// ---------- funcoes de turno (iguais em todos os fluxos) ----------\nfunction turnoDaHora(h) {\n    if (h >= 6 && h < 14) return 'manha';\n    if (h >= 14 && h < 22) return 'tarde';\n    return 'noite';\n}\n\nfunction dataLocal(d) {\n    var ano = d.getFullYear();\n    var mes = String(d.getMonth() + 1).padStart(2, '0');\n    var dia = String(d.getDate()).padStart(2, '0');\n    return ano + '-' + mes + '-' + dia;\n}\n\n// Transforma o timestamp de uma lamina em { dia, turno } no horario local.\n// O turno da noite (22h-6h) conta para o dia em que comecou.\nfunction diaETurno(timestamp) {\n    var momento = new Date(timestamp);\n    if (isNaN(momento.getTime())) return null;\n    var hora = momento.getHours();\n    var diaProducao = new Date(momento.getTime());\n    if (hora < 6) diaProducao.setDate(diaProducao.getDate() - 1);\n    return { dia: dataLocal(diaProducao), turno: turnoDaHora(hora) };\n}\n\n// Le o resumo_turnos.csv: devolve as linhas e quais turnos ja foram fechados\nfunction lerResumo(texto) {\n    var linhas = [];\n    var fechados = {};\n    (texto || '').split(/\\r?\\n/).forEach(function (linha, i) {\n        if (i === 0 || !linha.trim()) return; // pula cabecalho e linha vazia\n        var c = linha.split(',');\n        var registro = { dia: c[0], turno: c[1], esteira: c[2], total: parseInt(c[3], 10) || 0 };\n        linhas.push(registro);\n        fechados[registro.dia + '|' + registro.turno] = true;\n    });\n    return { linhas: linhas, fechados: fechados };\n}\n\n// Percorre o contagem.csv chamando fn(dia, turno, esteira) para cada lamina\nfunction percorrerContagem(texto, fn) {\n    var linhas = (texto || '').split(/\\r?\\n/);\n    var cabecalho = (linhas[0] || '').split(',');\n    var iEsteira = cabecalho.indexOf('esteira');\n    var iTimestamp = cabecalho.indexOf('timestamp');\n    if (iEsteira === -1 || iTimestamp === -1) return false;\n    for (var i = 1; i < linhas.length; i++) {\n        if (!linhas[i].trim()) continue;\n        var c = linhas[i].split(',');\n        var dt = diaETurno(c[iTimestamp]);\n        if (!dt) continue;\n        fn(dt.dia, dt.turno, c[iEsteira]);\n    }\n    return true;\n}\n\n// ---------- HISTORICO ----------\n// Turnos fechados vem do resumo_turnos.csv (leve).\n// O turno em andamento (e qualquer um ainda nao fechado) vem do contagem.csv.\nvar dias = parseInt(msg.req && msg.req.query ? msg.req.query.dias : '', 10);\nif (!dias || dias < 1) dias = 7;\nif (dias > 90) dias = 90;\n\nvar porDia = {};\nfunction somar(dia, turno, esteira, quantidade) {\n    if (!porDia[dia]) {\n        porDia[dia] = { data: dia, total: 0, turnos: { manha: 0, tarde: 0, noite: 0 }, esteiras: {} };\n    }\n    var r = porDia[dia];\n    r.total += quantidade;\n    r.turnos[turno] = (r.turnos[turno] || 0) + quantidade;\n    if (!r.esteiras[esteira]) r.esteiras[esteira] = { manha: 0, tarde: 0, noite: 0, total: 0 };\n    r.esteiras[esteira][turno] += quantidade;\n    r.esteiras[esteira].total += quantidade;\n}\n\nvar resumo = lerResumo(msg.resumo);\nresumo.linhas.forEach(function (l) { somar(l.dia, l.turno, l.esteira, l.total); });\n\npercorrerContagem(typeof msg.payload === 'string' ? msg.payload : '', function (dia, turno, esteira) {\n    if (resumo.fechados[dia + '|' + turno]) return; // ja contado pelo resumo\n    somar(dia, turno, esteira, 1);\n});\n\nvar lista = Object.keys(porDia).sort().reverse().slice(0, dias)\n    .map(function (chave) { return porDia[chave]; });\n\nmsg.payload = { dias: lista };\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1030,
+    "y": 120,
+    "wires": [
+      [
+        "wc_h3_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_h3_resp",
+    "type": "http response",
+    "z": "wc_tab_historico_v3",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "x": 1230,
+    "y": 120,
+    "wires": []
+  },
+  {
+    "id": "wc_h3_catch",
+    "type": "catch",
+    "z": "wc_tab_historico_v3",
+    "name": "Erro no contagem/soma",
+    "scope": [
+      "wc_h3_lcont",
+      "wc_h3_fn"
+    ],
+    "uncaught": false,
+    "x": 850,
+    "y": 280,
+    "wires": [
+      [
+        "wc_h3_erro"
+      ]
+    ]
+  },
+  {
+    "id": "wc_h3_erro",
+    "type": "function",
+    "z": "wc_tab_historico_v3",
+    "name": "Monta resposta de erro",
+    "func": "var texto = (msg.error && msg.error.message) ? msg.error.message : 'erro desconhecido';\nif (texto.indexOf('ENOENT') !== -1) {\n    // contagem.csv ainda nao existe: sem historico, nao e erro\n    msg.statusCode = 200;\n    msg.payload = { dias: [] };\n    return msg;\n}\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Falha no historico: ' + texto };\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1080,
+    "y": 280,
+    "wires": [
+      [
+        "wc_h3_resp"
+      ]
+    ]
+  }
+]

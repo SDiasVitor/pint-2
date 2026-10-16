@@ -1,0 +1,872 @@
+[
+  {
+    "id": "wc_tab_parada",
+    "type": "tab",
+    "label": "WoodScan - Parada de esteira",
+    "disabled": false,
+    "info": "Operador PARA a esteira pelo site. So a manutencao (login + senha) LIBERA. A liberacao calcula o tempo parado e grava em paradas.csv e manutencoes.csv. Versao 3: grava tambem o tipo de manutencao e o defeito encontrado."
+  },
+  {
+    "id": "wc_pa_c1",
+    "type": "comment",
+    "z": "wc_tab_parada",
+    "name": "1) Situacao de todas as esteiras (site e Raspberry consultam)",
+    "info": "",
+    "x": 270,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "wc_pa_get",
+    "type": "http in",
+    "z": "wc_tab_parada",
+    "name": "GET /api/status-esteiras",
+    "url": "/api/status-esteiras",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 160,
+    "y": 90,
+    "wires": [
+      [
+        "wc_pa_sql1"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pa_sql1",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Monta SQL",
+    "func": "// Lista a situacao de todas as esteiras (usado pelo site E pela Raspberry)\nmsg.topic = 'SELECT codigo, em_manutencao, parada_em FROM esteiras';\nmsg.payload = [];\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 90,
+    "wires": [
+      [
+        "wc_pa_db1"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pa_db1",
+    "type": "mysql",
+    "z": "wc_tab_parada",
+    "mydb": "wc_mysqldb",
+    "name": "Busca situacao",
+    "x": 560,
+    "y": 90,
+    "wires": [
+      [
+        "wc_pa_fmt"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pa_fmt",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Formata resposta",
+    "func": "// Devolve { esteiras: { esteira1: { parada: false, parada_em: null }, ... } }\nvar esteiras = {};\n(Array.isArray(msg.payload) ? msg.payload : []).forEach(function (linha) {\n    esteiras[linha.codigo] = { parada: Boolean(linha.em_manutencao), parada_em: linha.parada_em || null };\n});\nmsg.statusCode = 200;\nmsg.payload = { esteiras: esteiras };\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 760,
+    "y": 90,
+    "wires": [
+      [
+        "wc_pa_resp1"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pa_resp1",
+    "type": "http response",
+    "z": "wc_tab_parada",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "x": 960,
+    "y": 90,
+    "wires": []
+  },
+  {
+    "id": "wc_pa_c2",
+    "type": "comment",
+    "z": "wc_tab_parada",
+    "name": "2) Botao do site: so PARA a producao",
+    "info": "",
+    "x": 210,
+    "y": 170,
+    "wires": []
+  },
+  {
+    "id": "wc_pa_post",
+    "type": "http in",
+    "z": "wc_tab_parada",
+    "name": "POST /api/esteiras/:esteiraId/parada",
+    "url": "/api/esteiras/:esteiraId/parada",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 200,
+    "y": 220,
+    "wires": [
+      [
+        "wc_pa_sql2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pa_sql2",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Monta SQL (so parar)",
+    "func": "// POST /api/esteiras/esteira1/parada  ->  so PARA a esteira.\n// Liberar e com a manutencao (rota /liberar, que exige login e senha).\n// Saida 1: segue para o MySQL | Saida 2: erro direto\nvar codigo = msg.req.params.esteiraId;\nvar parada = msg.payload && msg.payload.parada;\n\nif (parada === false) {\n    msg.statusCode = 403;\n    msg.payload = { erro: 'Somente a equipe de manutencao pode liberar a esteira (area Manutencao).' };\n    return [null, msg];\n}\n\nmsg.esteiraId = codigo;\n// so marca o horario se ela ainda nao estava parada\nmsg.topic = 'UPDATE esteiras SET em_manutencao = TRUE, parada_em = IFNULL(parada_em, NOW()) WHERE codigo = ?';\nmsg.payload = [codigo];\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 460,
+    "y": 220,
+    "wires": [
+      [
+        "wc_pa_db2"
+      ],
+      [
+        "wc_pa_resp2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pa_db2",
+    "type": "mysql",
+    "z": "wc_tab_parada",
+    "mydb": "wc_mysqldb",
+    "name": "Marca como parada",
+    "x": 670,
+    "y": 220,
+    "wires": [
+      [
+        "wc_pa_ok"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pa_ok",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Confere se atualizou",
+    "func": "var linhas = (msg.payload && msg.payload.affectedRows) || 0;\nif (linhas === 0) {\n    msg.statusCode = 404;\n    msg.payload = { erro: 'Esteira ' + msg.esteiraId + ' nao encontrada' };\n    return msg;\n}\nmsg.statusCode = 200;\nmsg.payload = { esteira: msg.esteiraId, parada: true, status: 'producao parada: aguardando liberacao da manutencao' };\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 880,
+    "y": 220,
+    "wires": [
+      [
+        "wc_pa_resp2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pa_resp2",
+    "type": "http response",
+    "z": "wc_tab_parada",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "x": 1080,
+    "y": 220,
+    "wires": []
+  },
+  {
+    "id": "wc_pa_c3",
+    "type": "comment",
+    "z": "wc_tab_parada",
+    "name": "3) Manutencao LIBERA: confere senha, calcula tempo parado, grava CSVs e solta a esteira",
+    "info": "",
+    "x": 380,
+    "y": 300,
+    "wires": []
+  },
+  {
+    "id": "wc_li_in",
+    "type": "http in",
+    "z": "wc_tab_parada",
+    "name": "POST /api/esteiras/:esteiraId/liberar",
+    "url": "/api/esteiras/:esteiraId/liberar",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 200,
+    "y": 350,
+    "wires": [
+      [
+        "wc_li_valida"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_valida",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Valida + SQL do login",
+    "func": "// POST /api/esteiras/esteira1/liberar  com  { login, senha, observacao }\n// 1o passo: confere se quem esta liberando e da manutencao.\n// Saida 1: segue para o MySQL | Saida 2: erro direto\nvar b = msg.payload || {};\nvar login = String(b.login || '').trim();\nvar senha = String(b.senha || '');\n\nif (!login || !senha) {\n    msg.statusCode = 401;\n    msg.payload = { erro: 'Informe login e senha da manutencao' };\n    return [null, msg];\n}\n\nfunction limpar(texto, limite) {\n    // o CSV e separado por virgula: tira quebras de linha e troca virgula por ponto e virgula\n    return String(texto || '').replace(/[\\r\\n]+/g, ' ').replace(/,/g, ';').trim().slice(0, limite);\n}\n\nmsg.esteiraId = msg.req.params.esteiraId;\nmsg.tipoManutencao = limpar(b.tipo_manutencao, 60);\nmsg.defeito = limpar(b.defeito, 100);\nmsg.observacao = limpar(b.observacao, 200);\n\nif (!msg.tipoManutencao) {\n    msg.statusCode = 400;\n    msg.payload = { erro: 'Selecione o tipo de manutencao' };\n    return [null, msg];\n}\nif (!msg.defeito) {\n    msg.statusCode = 400;\n    msg.payload = { erro: 'Selecione o defeito encontrado' };\n    return [null, msg];\n}\nmsg.topic = \"SELECT nome, login FROM usuarios WHERE login = ? AND senha_hash = SHA2(?, 256) AND perfil = 'manutencao'\";\nmsg.payload = [login, senha];\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 460,
+    "y": 350,
+    "wires": [
+      [
+        "wc_li_db_user"
+      ],
+      [
+        "wc_li_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_db_user",
+    "type": "mysql",
+    "z": "wc_tab_parada",
+    "mydb": "wc_mysqldb",
+    "name": "Busca usuario",
+    "x": 660,
+    "y": 350,
+    "wires": [
+      [
+        "wc_li_confere"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_confere",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Confere credencial",
+    "func": "// 2o passo: credencial ok? Entao busca a situacao da esteira.\nvar linhas = Array.isArray(msg.payload) ? msg.payload : [];\nif (linhas.length === 0) {\n    msg.statusCode = 401;\n    msg.payload = { erro: 'Login ou senha invalidos, ou usuario sem perfil de manutencao' };\n    return [null, msg];\n}\nmsg.responsavel = {\n    nome: String(linhas[0].nome).replace(/[\\r\\n]+/g, ' ').replace(/,/g, ';'),\n    login: linhas[0].login\n};\nmsg.topic = 'SELECT codigo, nome, em_manutencao, parada_em FROM esteiras WHERE codigo = ?';\nmsg.payload = [msg.esteiraId];\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 860,
+    "y": 350,
+    "wires": [
+      [
+        "wc_li_db_est"
+      ],
+      [
+        "wc_li_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_db_est",
+    "type": "mysql",
+    "z": "wc_tab_parada",
+    "mydb": "wc_mysqldb",
+    "name": "Busca esteira",
+    "x": 1060,
+    "y": 350,
+    "wires": [
+      [
+        "wc_li_calc"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_calc",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Calcula tempo parado",
+    "func": "// 3o passo: a esteira esta mesmo parada? Calcula quanto tempo ficou parada.\nvar linhas = Array.isArray(msg.payload) ? msg.payload : [];\nif (linhas.length === 0) {\n    msg.statusCode = 404;\n    msg.payload = { erro: 'Esteira ' + msg.esteiraId + ' nao encontrada' };\n    return [null, msg];\n}\nvar esteira = linhas[0];\nif (!esteira.em_manutencao) {\n    msg.statusCode = 409;\n    msg.payload = { erro: 'A ' + esteira.nome + ' nao esta parada' };\n    return [null, msg];\n}\n\nfunction dataHoraLocal(d) {\n    var dois = function (n) { return String(n).padStart(2, '0'); };\n    return d.getFullYear() + '-' + dois(d.getMonth() + 1) + '-' + dois(d.getDate()) +\n        'T' + dois(d.getHours()) + ':' + dois(d.getMinutes());\n}\n\nvar fim = new Date();\nvar inicio = esteira.parada_em ? new Date(esteira.parada_em) : fim;\nif (isNaN(inicio.getTime()) || inicio > fim) inicio = fim;\nvar minutos = Math.round((fim.getTime() - inicio.getTime()) / 60000);\n\nmsg.parada = {\n    esteira: esteira.codigo,\n    nomeEsteira: esteira.nome,\n    inicio: dataHoraLocal(inicio),\n    fim: dataHoraLocal(fim),\n    minutos: minutos\n};\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1260,
+    "y": 350,
+    "wires": [
+      [
+        "wc_li_ler_par"
+      ],
+      [
+        "wc_li_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_ler_par",
+    "type": "file in",
+    "z": "wc_tab_parada",
+    "name": "Le paradas.csv",
+    "filename": "C:\\woodscan\\paradas.csv",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "none",
+    "allProps": false,
+    "x": 200,
+    "y": 440,
+    "wires": [
+      [
+        "wc_li_linha_par"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_linha_par",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Monta linha da parada",
+    "func": "// 4o passo: monta a linha do paradas.csv (msg.payload = conteudo atual do arquivo)\nvar atual = typeof msg.payload === 'string' ? msg.payload : '';\nvar p = msg.parada;\n// tipo e defeito ficam no FINAL da linha: assim as linhas antigas do arquivo continuam validas\nvar linha = [p.esteira, p.inicio, p.fim, p.minutos, msg.responsavel.nome, msg.responsavel.login,\n    msg.observacao, msg.tipoManutencao, msg.defeito].join(',') + '\\n';\n\nvar texto = '';\nif (!atual.trim()) texto += 'esteira,inicio,fim,duracao_min,liberado_por,login,observacao,tipo_manutencao,defeito\\n';\nelse if (!/\\n$/.test(atual)) texto += '\\n';\nmsg.payload = texto + linha;\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 440,
+    "wires": [
+      [
+        "wc_li_grava_par"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_grava_par",
+    "type": "file",
+    "z": "wc_tab_parada",
+    "name": "Grava em paradas.csv",
+    "filename": "C:\\woodscan\\paradas.csv",
+    "filenameType": "str",
+    "appendNewline": false,
+    "createDir": true,
+    "overwriteFile": "false",
+    "encoding": "none",
+    "x": 650,
+    "y": 440,
+    "wires": [
+      [
+        "wc_li_ler_man"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_ler_man",
+    "type": "file in",
+    "z": "wc_tab_parada",
+    "name": "Le manutencoes.csv",
+    "filename": "C:\\woodscan\\manutencoes.csv",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "none",
+    "allProps": false,
+    "x": 880,
+    "y": 440,
+    "wires": [
+      [
+        "wc_li_linha_man"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_linha_man",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Monta linha da manutencao",
+    "func": "// 5o passo: a liberacao tambem conta como manutencao realizada\n// (atualiza a \"Ultima manutencao\" da esteira). msg.payload = conteudo do manutencoes.csv\nvar atual = typeof msg.payload === 'string' ? msg.payload : '';\nvar p = msg.parada;\n\nvar horas = Math.floor(p.minutos / 60);\nvar resto = p.minutos % 60;\nvar tempo = horas > 0 ? horas + 'h ' + resto + 'min' : resto + 'min';\nvar observacao = 'Liberada apos parada de ' + tempo + (msg.observacao ? ' - ' + msg.observacao : '');\n\n// tipo e defeito no FINAL da linha (as linhas antigas continuam validas)\nvar linha = [p.fim, p.esteira, msg.responsavel.nome, msg.responsavel.login, observacao,\n    msg.tipoManutencao, msg.defeito].join(',') + '\\n';\nvar texto = '';\nif (!atual.trim()) texto += 'data_hora,esteira,responsavel,login,observacao,tipo_manutencao,defeito\\n';\nelse if (!/\\n$/.test(atual)) texto += '\\n';\nmsg.payload = texto + linha;\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1110,
+    "y": 440,
+    "wires": [
+      [
+        "wc_li_grava_man"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_grava_man",
+    "type": "file",
+    "z": "wc_tab_parada",
+    "name": "Grava em manutencoes.csv",
+    "filename": "C:\\woodscan\\manutencoes.csv",
+    "filenameType": "str",
+    "appendNewline": false,
+    "createDir": true,
+    "overwriteFile": "false",
+    "encoding": "none",
+    "x": 1350,
+    "y": 440,
+    "wires": [
+      [
+        "wc_li_update"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_update",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "SQL: libera esteira",
+    "func": "// 6o passo: tira a parada do cadastro da esteira (a Raspberry volta a gerar leituras)\nmsg.topic = 'UPDATE esteiras SET em_manutencao = FALSE, parada_em = NULL WHERE codigo = ?';\nmsg.payload = [msg.esteiraId];\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 520,
+    "wires": [
+      [
+        "wc_li_db_upd"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_db_upd",
+    "type": "mysql",
+    "z": "wc_tab_parada",
+    "mydb": "wc_mysqldb",
+    "name": "Atualiza esteira",
+    "x": 620,
+    "y": 520,
+    "wires": [
+      [
+        "wc_li_ok"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_ok",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Resposta de sucesso",
+    "func": "msg.statusCode = 200;\nmsg.payload = {\n    status: 'esteira liberada',\n    esteira: msg.parada.esteira,\n    inicio: msg.parada.inicio,\n    fim: msg.parada.fim,\n    duracao_min: msg.parada.minutos,\n    liberado_por: msg.responsavel.nome,\n    tipo_manutencao: msg.tipoManutencao,\n    defeito: msg.defeito\n};\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 820,
+    "y": 520,
+    "wires": [
+      [
+        "wc_li_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_resp",
+    "type": "http response",
+    "z": "wc_tab_parada",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "x": 1060,
+    "y": 520,
+    "wires": []
+  },
+  {
+    "id": "wc_li_catch_par",
+    "type": "catch",
+    "z": "wc_tab_parada",
+    "name": "paradas.csv nao existe",
+    "scope": [
+      "wc_li_ler_par"
+    ],
+    "uncaught": false,
+    "x": 210,
+    "y": 600,
+    "wires": [
+      [
+        "wc_li_vazio_par"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_vazio_par",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Arquivo ainda nao existe?",
+    "func": "// So trata como \"arquivo vazio\" quando ele realmente nao existe.\nvar texto = (msg.error && msg.error.message) ? msg.error.message : '';\nif (texto.indexOf('ENOENT') !== -1) {\n    msg.payload = '';\n    return [msg, null];\n}\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Nao foi possivel ler o arquivo CSV (aberto no Excel?): ' + texto };\nreturn [null, msg];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 460,
+    "y": 600,
+    "wires": [
+      [
+        "wc_li_linha_par"
+      ],
+      [
+        "wc_li_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_catch_man",
+    "type": "catch",
+    "z": "wc_tab_parada",
+    "name": "manutencoes.csv nao existe",
+    "scope": [
+      "wc_li_ler_man"
+    ],
+    "uncaught": false,
+    "x": 220,
+    "y": 660,
+    "wires": [
+      [
+        "wc_li_vazio_man"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_vazio_man",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Arquivo ainda nao existe?",
+    "func": "// So trata como \"arquivo vazio\" quando ele realmente nao existe.\nvar texto = (msg.error && msg.error.message) ? msg.error.message : '';\nif (texto.indexOf('ENOENT') !== -1) {\n    msg.payload = '';\n    return [msg, null];\n}\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Nao foi possivel ler o arquivo CSV (aberto no Excel?): ' + texto };\nreturn [null, msg];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 460,
+    "y": 660,
+    "wires": [
+      [
+        "wc_li_linha_man"
+      ],
+      [
+        "wc_li_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pa_c4",
+    "type": "comment",
+    "z": "wc_tab_parada",
+    "name": "4) Historico de paradas (tempo que cada esteira ficou parada)",
+    "info": "",
+    "x": 270,
+    "y": 740,
+    "wires": []
+  },
+  {
+    "id": "wc_pl_in",
+    "type": "http in",
+    "z": "wc_tab_parada",
+    "name": "GET /api/paradas",
+    "url": "/api/paradas",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 140,
+    "y": 790,
+    "wires": [
+      [
+        "wc_pl_ler"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pl_ler",
+    "type": "file in",
+    "z": "wc_tab_parada",
+    "name": "Le paradas.csv",
+    "filename": "C:\\woodscan\\paradas.csv",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "none",
+    "allProps": false,
+    "x": 340,
+    "y": 790,
+    "wires": [
+      [
+        "wc_pl_fn"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pl_fn",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Lista + total por esteira",
+    "func": "// msg.payload = conteudo do paradas.csv ('' se ainda nao existe)\n// Devolve as paradas mais recentes e o tempo total parado de cada esteira.\nvar texto = typeof msg.payload === 'string' ? msg.payload : '';\nvar registros = [];\ntexto.split(/\\r?\\n/).forEach(function (linha, i) {\n    if (i === 0 || !linha.trim()) return;\n    var c = linha.split(',');\n    if (c.length < 5) return;\n    registros.push({\n        esteira: c[0], inicio: c[1], fim: c[2],\n        duracao_min: parseInt(c[3], 10) || 0,\n        liberado_por: c[4],\n        observacao: c[6] || '',\n        tipo_manutencao: c[7] || '',\n        defeito: c[8] || ''\n    });\n});\n\nregistros.sort(function (a, b) { return a.fim < b.fim ? 1 : (a.fim > b.fim ? -1 : 0); });\n\nvar totalPorEsteira = {};\nregistros.forEach(function (r) {\n    totalPorEsteira[r.esteira] = (totalPorEsteira[r.esteira] || 0) + r.duracao_min;\n});\n\nmsg.statusCode = 200;\nmsg.payload = { registros: registros.slice(0, 50), total_min_por_esteira: totalPorEsteira };\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 560,
+    "y": 790,
+    "wires": [
+      [
+        "wc_pl_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pl_resp",
+    "type": "http response",
+    "z": "wc_tab_parada",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "x": 780,
+    "y": 790,
+    "wires": []
+  },
+  {
+    "id": "wc_pl_catch_ler",
+    "type": "catch",
+    "z": "wc_tab_parada",
+    "name": "paradas.csv nao existe",
+    "scope": [
+      "wc_pl_ler"
+    ],
+    "uncaught": false,
+    "x": 350,
+    "y": 850,
+    "wires": [
+      [
+        "wc_pl_vazio"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pl_vazio",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Arquivo ainda nao existe?",
+    "func": "// So trata como \"arquivo vazio\" quando ele realmente nao existe.\nvar texto = (msg.error && msg.error.message) ? msg.error.message : '';\nif (texto.indexOf('ENOENT') !== -1) {\n    msg.payload = '';\n    return [msg, null];\n}\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Nao foi possivel ler o arquivo CSV (aberto no Excel?): ' + texto };\nreturn [null, msg];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 600,
+    "y": 850,
+    "wires": [
+      [
+        "wc_pl_fn"
+      ],
+      [
+        "wc_pl_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pa_catch1",
+    "type": "catch",
+    "z": "wc_tab_parada",
+    "name": "Erro na situacao",
+    "scope": [
+      "wc_pa_sql1",
+      "wc_pa_db1",
+      "wc_pa_fmt"
+    ],
+    "uncaught": false,
+    "x": 150,
+    "y": 930,
+    "wires": [
+      [
+        "wc_pa_erro1"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pa_erro1",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Monta resposta de erro",
+    "func": "var texto = (msg.error && msg.error.message) ? msg.error.message : 'erro desconhecido';\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Falha na parada/liberacao: ' + texto };\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 930,
+    "wires": [
+      [
+        "wc_pa_resp1"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pa_catch2",
+    "type": "catch",
+    "z": "wc_tab_parada",
+    "name": "Erro ao parar",
+    "scope": [
+      "wc_pa_sql2",
+      "wc_pa_db2",
+      "wc_pa_ok"
+    ],
+    "uncaught": false,
+    "x": 150,
+    "y": 990,
+    "wires": [
+      [
+        "wc_pa_erro2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pa_erro2",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Monta resposta de erro",
+    "func": "var texto = (msg.error && msg.error.message) ? msg.error.message : 'erro desconhecido';\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Falha na parada/liberacao: ' + texto };\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 990,
+    "wires": [
+      [
+        "wc_pa_resp2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_catch",
+    "type": "catch",
+    "z": "wc_tab_parada",
+    "name": "Erro na liberacao",
+    "scope": [
+      "wc_li_valida",
+      "wc_li_db_user",
+      "wc_li_confere",
+      "wc_li_db_est",
+      "wc_li_calc",
+      "wc_li_linha_par",
+      "wc_li_grava_par",
+      "wc_li_linha_man",
+      "wc_li_grava_man",
+      "wc_li_update",
+      "wc_li_db_upd",
+      "wc_li_ok"
+    ],
+    "uncaught": false,
+    "x": 160,
+    "y": 1050,
+    "wires": [
+      [
+        "wc_li_erro"
+      ]
+    ]
+  },
+  {
+    "id": "wc_li_erro",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Monta resposta de erro",
+    "func": "var texto = (msg.error && msg.error.message) ? msg.error.message : 'erro desconhecido';\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Falha na parada/liberacao: ' + texto };\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 1050,
+    "wires": [
+      [
+        "wc_li_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pl_catch",
+    "type": "catch",
+    "z": "wc_tab_parada",
+    "name": "Erro no historico",
+    "scope": [
+      "wc_pl_fn"
+    ],
+    "uncaught": false,
+    "x": 150,
+    "y": 1110,
+    "wires": [
+      [
+        "wc_pl_erro"
+      ]
+    ]
+  },
+  {
+    "id": "wc_pl_erro",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Monta resposta de erro",
+    "func": "var texto = (msg.error && msg.error.message) ? msg.error.message : 'erro desconhecido';\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Falha na parada/liberacao: ' + texto };\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 1110,
+    "wires": [
+      [
+        "wc_pl_resp"
+      ]
+    ]
+  }
+]

@@ -1,0 +1,251 @@
+[
+  {
+    "id": "wc_tab_fechamento",
+    "type": "tab",
+    "label": "WoodScan - Fechamento de turno",
+    "disabled": false,
+    "info": "Nas trocas de turno (6h01, 14h01, 22h01), ao ligar o Node-RED e no botao manual: soma as laminas dos turnos ja encerrados e grava 1 linha por esteira em resumo_turnos.csv."
+  },
+  {
+    "id": "wc_fe_cron",
+    "type": "inject",
+    "z": "wc_tab_fechamento",
+    "name": "Troca de turno (6h01, 14h01, 22h01)",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "01 06,14,22 * * *",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 190,
+    "y": 80,
+    "wires": [
+      [
+        "wc_fe_lres"
+      ]
+    ]
+  },
+  {
+    "id": "wc_fe_boot",
+    "type": "inject",
+    "z": "wc_tab_fechamento",
+    "name": "Ao ligar o Node-RED",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "15",
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 150,
+    "y": 130,
+    "wires": [
+      [
+        "wc_fe_lres"
+      ]
+    ]
+  },
+  {
+    "id": "wc_fe_manual",
+    "type": "inject",
+    "z": "wc_tab_fechamento",
+    "name": "Fechar agora (teste)",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 150,
+    "y": 180,
+    "wires": [
+      [
+        "wc_fe_lres"
+      ]
+    ]
+  },
+  {
+    "id": "wc_fe_lres",
+    "type": "file in",
+    "z": "wc_tab_fechamento",
+    "name": "Le resumo_turnos.csv",
+    "filename": "C:\\woodscan\\resumo_turnos.csv",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "none",
+    "allProps": false,
+    "x": 440,
+    "y": 130,
+    "wires": [
+      [
+        "wc_fe_mv"
+      ]
+    ]
+  },
+  {
+    "id": "wc_fe_mv",
+    "type": "change",
+    "z": "wc_tab_fechamento",
+    "name": "Guarda em msg.resumo",
+    "rules": [
+      {
+        "t": "set",
+        "p": "resumo",
+        "pt": "msg",
+        "to": "payload",
+        "tot": "msg"
+      }
+    ],
+    "action": "",
+    "property": "",
+    "from": "",
+    "to": "",
+    "reg": false,
+    "x": 660,
+    "y": 130,
+    "wires": [
+      [
+        "wc_fe_lcont"
+      ]
+    ]
+  },
+  {
+    "id": "wc_fe_catch_res",
+    "type": "catch",
+    "z": "wc_tab_fechamento",
+    "name": "Resumo nao encontrado",
+    "scope": [
+      "wc_fe_lres"
+    ],
+    "uncaught": false,
+    "x": 450,
+    "y": 220,
+    "wires": [
+      [
+        "wc_fe_empty"
+      ]
+    ]
+  },
+  {
+    "id": "wc_fe_empty",
+    "type": "change",
+    "z": "wc_tab_fechamento",
+    "name": "Resumo ainda nao existe: usa vazio",
+    "rules": [
+      {
+        "t": "set",
+        "p": "resumo",
+        "pt": "msg",
+        "to": "",
+        "tot": "str"
+      }
+    ],
+    "action": "",
+    "property": "",
+    "from": "",
+    "to": "",
+    "reg": false,
+    "x": 700,
+    "y": 220,
+    "wires": [
+      [
+        "wc_fe_lcont"
+      ]
+    ]
+  },
+  {
+    "id": "wc_fe_lcont",
+    "type": "file in",
+    "z": "wc_tab_fechamento",
+    "name": "Le contagem.csv",
+    "filename": "C:\\woodscan\\contagem.csv",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "none",
+    "allProps": false,
+    "x": 900,
+    "y": 130,
+    "wires": [
+      [
+        "wc_fe_fn"
+      ]
+    ]
+  },
+  {
+    "id": "wc_fe_fn",
+    "type": "function",
+    "z": "wc_tab_fechamento",
+    "name": "Fecha turnos encerrados",
+    "func": "// ---------- funcoes de turno (iguais em todos os fluxos) ----------\nfunction turnoDaHora(h) {\n    if (h >= 6 && h < 14) return 'manha';\n    if (h >= 14 && h < 22) return 'tarde';\n    return 'noite';\n}\n\nfunction dataLocal(d) {\n    var ano = d.getFullYear();\n    var mes = String(d.getMonth() + 1).padStart(2, '0');\n    var dia = String(d.getDate()).padStart(2, '0');\n    return ano + '-' + mes + '-' + dia;\n}\n\n// Transforma o timestamp de uma lamina em { dia, turno } no horario local.\n// O turno da noite (22h-6h) conta para o dia em que comecou.\nfunction diaETurno(timestamp) {\n    var momento = new Date(timestamp);\n    if (isNaN(momento.getTime())) return null;\n    var hora = momento.getHours();\n    var diaProducao = new Date(momento.getTime());\n    if (hora < 6) diaProducao.setDate(diaProducao.getDate() - 1);\n    return { dia: dataLocal(diaProducao), turno: turnoDaHora(hora) };\n}\n\n// Le o resumo_turnos.csv: devolve as linhas e quais turnos ja foram fechados\nfunction lerResumo(texto) {\n    var linhas = [];\n    var fechados = {};\n    (texto || '').split(/\\r?\\n/).forEach(function (linha, i) {\n        if (i === 0 || !linha.trim()) return; // pula cabecalho e linha vazia\n        var c = linha.split(',');\n        var registro = { dia: c[0], turno: c[1], esteira: c[2], total: parseInt(c[3], 10) || 0 };\n        linhas.push(registro);\n        fechados[registro.dia + '|' + registro.turno] = true;\n    });\n    return { linhas: linhas, fechados: fechados };\n}\n\n// Percorre o contagem.csv chamando fn(dia, turno, esteira) para cada lamina\nfunction percorrerContagem(texto, fn) {\n    var linhas = (texto || '').split(/\\r?\\n/);\n    var cabecalho = (linhas[0] || '').split(',');\n    var iEsteira = cabecalho.indexOf('esteira');\n    var iTimestamp = cabecalho.indexOf('timestamp');\n    if (iEsteira === -1 || iTimestamp === -1) return false;\n    for (var i = 1; i < linhas.length; i++) {\n        if (!linhas[i].trim()) continue;\n        var c = linhas[i].split(',');\n        var dt = diaETurno(c[iTimestamp]);\n        if (!dt) continue;\n        fn(dt.dia, dt.turno, c[iEsteira]);\n    }\n    return true;\n}\n\n// ---------- FECHAMENTO DE TURNO ----------\n// msg.resumo  = texto atual do resumo_turnos.csv ('' se ainda nao existe)\n// msg.payload = texto do contagem.csv\nvar resumo = lerResumo(msg.resumo);\n\n// soma as laminas de cada dia + turno + esteira\nvar totais = {};\nvar ok = percorrerContagem(msg.payload, function (dia, turno, esteira) {\n    var chave = dia + '|' + turno + '|' + esteira;\n    totais[chave] = (totais[chave] || 0) + 1;\n});\nif (!ok) {\n    node.warn('contagem.csv sem as colunas esteira/timestamp no cabecalho');\n    return null;\n}\n\nfunction fimDoTurno(dia, turno) {\n    var p = dia.split('-').map(Number);\n    var fim = new Date(p[0], p[1] - 1, p[2]);\n    if (turno === 'manha') fim.setHours(14, 0, 0, 0);\n    else if (turno === 'tarde') fim.setHours(22, 0, 0, 0);\n    else { fim.setDate(fim.getDate() + 1); fim.setHours(6, 0, 0, 0); }\n    return fim;\n}\n\nvar agora = new Date();\nvar novas = [];\nObject.keys(totais).forEach(function (chave) {\n    var partes = chave.split('|'); // [dia, turno, esteira]\n    if (resumo.fechados[partes[0] + '|' + partes[1]]) return; // turno ja gravado\n    if (fimDoTurno(partes[0], partes[1]) > agora) return;     // turno ainda aberto\n    novas.push(partes.concat(totais[chave]).join(','));\n});\nnovas.sort();\n\nvar precisaCabecalho = !(msg.resumo || '').trim();\nif (novas.length === 0 && !precisaCabecalho) {\n    node.status({ fill: 'grey', shape: 'ring', text: 'nada novo para fechar' });\n    return null;\n}\n\nvar texto = precisaCabecalho ? 'data,turno,esteira,total\\n' : '';\nif (novas.length) texto += novas.join('\\n') + '\\n';\n\nnode.status({ fill: 'green', shape: 'dot', text: novas.length + ' linha(s) gravada(s) as ' + agora.toLocaleTimeString('pt-BR') });\nmsg.payload = texto;\nmsg.linhasNovas = novas;\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1120,
+    "y": 130,
+    "wires": [
+      [
+        "wc_fe_write"
+      ]
+    ]
+  },
+  {
+    "id": "wc_fe_write",
+    "type": "file",
+    "z": "wc_tab_fechamento",
+    "name": "Grava em resumo_turnos.csv",
+    "filename": "C:\\woodscan\\resumo_turnos.csv",
+    "filenameType": "str",
+    "appendNewline": false,
+    "createDir": true,
+    "overwriteFile": "false",
+    "encoding": "none",
+    "x": 1370,
+    "y": 130,
+    "wires": [
+      [
+        "wc_fe_dbg"
+      ]
+    ]
+  },
+  {
+    "id": "wc_fe_dbg",
+    "type": "debug",
+    "z": "wc_tab_fechamento",
+    "name": "Linhas gravadas",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "linhasNovas",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 1580,
+    "y": 130,
+    "wires": []
+  }
+]

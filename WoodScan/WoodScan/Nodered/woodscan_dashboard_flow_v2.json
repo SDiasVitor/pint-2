@@ -1,0 +1,313 @@
+[
+  {
+    "id": "wc_tab_dashboard",
+    "type": "tab",
+    "label": "WoodScan - Dashboard",
+    "disabled": false,
+    "info": "GET /api/dashboard?data=AAAA-MM-DD -> laminas de cada esteira por hora do dia, lidas do contagem.csv. | GET /api/dashboard/manutencao?inicio=&fim= -> tempo parado e defeitos (paradas.csv)."
+  },
+  {
+    "id": "wc_db_in",
+    "type": "http in",
+    "z": "wc_tab_dashboard",
+    "name": "GET /api/dashboard",
+    "url": "/api/dashboard",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 140,
+    "y": 100,
+    "wires": [
+      [
+        "wc_db_ler"
+      ]
+    ]
+  },
+  {
+    "id": "wc_db_ler",
+    "type": "file in",
+    "z": "wc_tab_dashboard",
+    "name": "Le contagem.csv",
+    "filename": "C:\\woodscan\\contagem.csv",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "none",
+    "allProps": false,
+    "x": 350,
+    "y": 100,
+    "wires": [
+      [
+        "wc_db_fn"
+      ]
+    ]
+  },
+  {
+    "id": "wc_db_fn",
+    "type": "function",
+    "z": "wc_tab_dashboard",
+    "name": "Soma laminas por hora e esteira",
+    "func": "// msg.payload = texto do contagem.csv ('' se ainda nao existe)\n// GET /api/dashboard?data=2026-10-14  (sem data = hoje)\n// Devolve as laminas de cada esteira em cada hora do dia (00h a 23h)\nfunction dataLocal(d) {\n    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');\n}\n\nvar hoje = dataLocal(new Date());\nvar pedida = msg.req && msg.req.query ? String(msg.req.query.data || '') : '';\nvar dia = /^\\d{4}-\\d{2}-\\d{2}$/.test(pedida) ? pedida : hoje;\n\nvar texto = typeof msg.payload === 'string' ? msg.payload : '';\nvar linhas = texto.split(/\\r?\\n/);\nvar cabecalho = (linhas[0] || '').split(',');\nvar iEsteira = cabecalho.indexOf('esteira');\nvar iTimestamp = cabecalho.indexOf('timestamp');\n\nvar porEsteira = {}; // { esteira1: [24 numeros] }\nvar total = 0;\n\nif (iEsteira !== -1 && iTimestamp !== -1) {\n    for (var i = 1; i < linhas.length; i++) {\n        if (!linhas[i].trim()) continue;\n        var c = linhas[i].split(',');\n        var momento = new Date(c[iTimestamp]);\n        if (isNaN(momento.getTime())) continue;\n        if (dataLocal(momento) !== dia) continue; // horario local do PC\n        var esteira = c[iEsteira];\n        if (!porEsteira[esteira]) porEsteira[esteira] = new Array(24).fill(0);\n        porEsteira[esteira][momento.getHours()]++;\n        total++;\n    }\n}\n\n// para hoje, as horas que ainda nao chegaram ficam de fora do grafico\nvar ultimaHora = dia === hoje ? new Date().getHours() : 23;\nif (dia > hoje) ultimaHora = -1;\n\nmsg.statusCode = 200;\nmsg.payload = { data: dia, ultima_hora: ultimaHora, total: total, por_hora: porEsteira };\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 600,
+    "y": 100,
+    "wires": [
+      [
+        "wc_db_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_db_resp",
+    "type": "http response",
+    "z": "wc_tab_dashboard",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "x": 860,
+    "y": 100,
+    "wires": []
+  },
+  {
+    "id": "wc_db_catch_ler",
+    "type": "catch",
+    "z": "wc_tab_dashboard",
+    "name": "CSV nao encontrado",
+    "scope": [
+      "wc_db_ler"
+    ],
+    "uncaught": false,
+    "x": 360,
+    "y": 180,
+    "wires": [
+      [
+        "wc_db_vazio"
+      ]
+    ]
+  },
+  {
+    "id": "wc_db_vazio",
+    "type": "function",
+    "z": "wc_tab_dashboard",
+    "name": "Arquivo ainda nao existe?",
+    "func": "// So trata como vazio quando o arquivo nao existe.\nvar texto = (msg.error && msg.error.message) ? msg.error.message : '';\nif (texto.indexOf('ENOENT') !== -1) {\n    msg.payload = '';\n    return [msg, null];\n}\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Nao foi possivel ler o contagem.csv (aberto no Excel?): ' + texto };\nreturn [null, msg];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 600,
+    "y": 180,
+    "wires": [
+      [
+        "wc_db_fn"
+      ],
+      [
+        "wc_db_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_db_catch",
+    "type": "catch",
+    "z": "wc_tab_dashboard",
+    "name": "Erro no dashboard",
+    "scope": [
+      "wc_db_fn"
+    ],
+    "uncaught": false,
+    "x": 360,
+    "y": 250,
+    "wires": [
+      [
+        "wc_db_erro"
+      ]
+    ]
+  },
+  {
+    "id": "wc_db_erro",
+    "type": "function",
+    "z": "wc_tab_dashboard",
+    "name": "Monta resposta de erro",
+    "func": "var texto = (msg.error && msg.error.message) ? msg.error.message : 'erro desconhecido';\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Falha no dashboard: ' + texto };\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 600,
+    "y": 250,
+    "wires": [
+      [
+        "wc_db_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_dm_c",
+    "type": "comment",
+    "z": "wc_tab_dashboard",
+    "name": "Manutencao: tempo parado e defeitos (paradas.csv)",
+    "info": "",
+    "x": 240,
+    "y": 330,
+    "wires": []
+  },
+  {
+    "id": "wc_dm_in",
+    "type": "http in",
+    "z": "wc_tab_dashboard",
+    "name": "GET /api/dashboard/manutencao",
+    "url": "/api/dashboard/manutencao",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 180,
+    "y": 380,
+    "wires": [
+      [
+        "wc_dm_ler"
+      ]
+    ]
+  },
+  {
+    "id": "wc_dm_ler",
+    "type": "file in",
+    "z": "wc_tab_dashboard",
+    "name": "Le paradas.csv",
+    "filename": "C:\\woodscan\\paradas.csv",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "none",
+    "allProps": false,
+    "x": 400,
+    "y": 380,
+    "wires": [
+      [
+        "wc_dm_fn"
+      ]
+    ]
+  },
+  {
+    "id": "wc_dm_fn",
+    "type": "function",
+    "z": "wc_tab_dashboard",
+    "name": "Tempo parado + defeitos no periodo",
+    "func": "// msg.payload = texto do paradas.csv ('' se ainda nao existe)\n// GET /api/dashboard/manutencao?inicio=2026-10-01&fim=2026-10-15  (sem datas = todo o periodo)\n// Soma o tempo parado de cada esteira DENTRO do periodo e conta os defeitos.\nfunction inicioDoDia(texto) {\n    var p = texto.split('-').map(Number);\n    return new Date(p[0], p[1] - 1, p[2]); // 00:00 no horario local do PC\n}\nvar q = (msg.req && msg.req.query) || {};\nvar formato = /^\\d{4}-\\d{2}-\\d{2}$/;\nvar periodoInicio = formato.test(q.inicio || '') ? inicioDoDia(q.inicio) : null;\nvar periodoFim = null;\nif (formato.test(q.fim || '')) {\n    periodoFim = inicioDoDia(q.fim);\n    periodoFim.setDate(periodoFim.getDate() + 1); // fim inclusivo: vai ate 23:59 do ultimo dia\n}\n\nvar tempo = {};      // { esteira1: minutos }\nvar quantidade = {}; // { esteira1: numero de paradas }\nvar defeitos = {};   // { 'Serra sem fio': { esteira1: 2, esteira3: 1 } }\nvar totalMin = 0;\nvar totalParadas = 0;\n\nvar linhas = (typeof msg.payload === 'string' ? msg.payload : '').split(/\\r?\\n/);\nfor (var i = 1; i < linhas.length; i++) {\n    if (!linhas[i].trim()) continue;\n    var c = linhas[i].split(',');\n    if (c.length < 4) continue;\n    var esteira = c[0];\n    var ini = new Date(c[1]);\n    var fim = new Date(c[2]);\n    if (isNaN(ini.getTime()) || isNaN(fim.getTime())) continue;\n\n    // parte da parada que caiu dentro do periodo pedido\n    var a = periodoInicio && ini < periodoInicio ? periodoInicio : ini;\n    var b = periodoFim && fim > periodoFim ? periodoFim : fim;\n    if (b <= a && !(ini.getTime() === fim.getTime() && (!periodoInicio || ini >= periodoInicio) && (!periodoFim || ini < periodoFim))) continue;\n\n    var minutos = Math.max(0, Math.round((b - a) / 60000));\n    tempo[esteira] = (tempo[esteira] || 0) + minutos;\n    quantidade[esteira] = (quantidade[esteira] || 0) + 1;\n    totalMin += minutos;\n    totalParadas++;\n\n    var defeito = (c[8] || '').trim() || 'Nao informado';\n    if (!defeitos[defeito]) defeitos[defeito] = {};\n    defeitos[defeito][esteira] = (defeitos[defeito][esteira] || 0) + 1;\n}\n\nmsg.statusCode = 200;\nmsg.payload = {\n    inicio: q.inicio || null,\n    fim: q.fim || null,\n    total_min: totalMin,\n    total_paradas: totalParadas,\n    tempo_parado_min: tempo,\n    paradas_qtd: quantidade,\n    defeitos: defeitos\n};\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 650,
+    "y": 380,
+    "wires": [
+      [
+        "wc_dm_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_dm_resp",
+    "type": "http response",
+    "z": "wc_tab_dashboard",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "x": 900,
+    "y": 380,
+    "wires": []
+  },
+  {
+    "id": "wc_dm_catch_ler",
+    "type": "catch",
+    "z": "wc_tab_dashboard",
+    "name": "paradas.csv nao existe",
+    "scope": [
+      "wc_dm_ler"
+    ],
+    "uncaught": false,
+    "x": 410,
+    "y": 440,
+    "wires": [
+      [
+        "wc_dm_vazio"
+      ]
+    ]
+  },
+  {
+    "id": "wc_dm_vazio",
+    "type": "function",
+    "z": "wc_tab_dashboard",
+    "name": "Arquivo ainda nao existe?",
+    "func": "// So trata como vazio quando o arquivo nao existe.\nvar texto = (msg.error && msg.error.message) ? msg.error.message : '';\nif (texto.indexOf('ENOENT') !== -1) {\n    msg.payload = '';\n    return [msg, null];\n}\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Nao foi possivel ler o contagem.csv (aberto no Excel?): ' + texto };\nreturn [null, msg];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 650,
+    "y": 440,
+    "wires": [
+      [
+        "wc_dm_fn"
+      ],
+      [
+        "wc_dm_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_dm_catch",
+    "type": "catch",
+    "z": "wc_tab_dashboard",
+    "name": "Erro no calculo",
+    "scope": [
+      "wc_dm_fn"
+    ],
+    "uncaught": false,
+    "x": 400,
+    "y": 500,
+    "wires": [
+      [
+        "wc_dm_erro"
+      ]
+    ]
+  },
+  {
+    "id": "wc_dm_erro",
+    "type": "function",
+    "z": "wc_tab_dashboard",
+    "name": "Monta resposta de erro",
+    "func": "var texto = (msg.error && msg.error.message) ? msg.error.message : 'erro desconhecido';\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Falha no dashboard de manutencao: ' + texto };\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 650,
+    "y": 500,
+    "wires": [
+      [
+        "wc_dm_resp"
+      ]
+    ]
+  }
+]

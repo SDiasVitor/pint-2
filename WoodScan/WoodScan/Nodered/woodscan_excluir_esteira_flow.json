@@ -1,0 +1,128 @@
+[
+  {
+    "id": "wc_tab_excluir_esteira",
+    "type": "tab",
+    "label": "WoodScan - Excluir esteira",
+    "disabled": false,
+    "info": "DELETE /api/esteiras/:esteiraId -> apaga o cadastro da esteira no MySQL. O historico no CSV continua guardado."
+  },
+  {
+    "id": "wc_del_in",
+    "type": "http in",
+    "z": "wc_tab_excluir_esteira",
+    "name": "DELETE /api/esteiras/:esteiraId",
+    "url": "/api/esteiras/:esteiraId",
+    "method": "delete",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 180,
+    "y": 120,
+    "wires": [
+      [
+        "wc_del_sql"
+      ]
+    ]
+  },
+  {
+    "id": "wc_del_sql",
+    "type": "function",
+    "z": "wc_tab_excluir_esteira",
+    "name": "Monta SQL",
+    "func": "// Codigo da esteira vem da URL: DELETE /api/esteiras/esteira6\nmsg.esteiraId = msg.req.params.esteiraId;\nmsg.topic = 'DELETE FROM esteiras WHERE codigo = ?';\nmsg.payload = [msg.esteiraId];\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 120,
+    "wires": [
+      [
+        "wc_del_mysql"
+      ]
+    ]
+  },
+  {
+    "id": "wc_del_mysql",
+    "type": "mysql",
+    "z": "wc_tab_excluir_esteira",
+    "mydb": "wc_mysqldb",
+    "name": "Apaga esteira",
+    "x": 600,
+    "y": 120,
+    "wires": [
+      [
+        "wc_del_resp_fn"
+      ]
+    ]
+  },
+  {
+    "id": "wc_del_resp_fn",
+    "type": "function",
+    "z": "wc_tab_excluir_esteira",
+    "name": "Confere se apagou",
+    "func": "// O no do MySQL devolve quantas linhas foram apagadas\nvar apagadas = (msg.payload && msg.payload.affectedRows) || 0;\nif (apagadas === 0) {\n    msg.statusCode = 404;\n    msg.payload = { erro: 'Esteira ' + msg.esteiraId + ' nao encontrada' };\n    return msg;\n}\nmsg.statusCode = 200;\nmsg.payload = { status: 'esteira excluida', esteira: msg.esteiraId };\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 800,
+    "y": 120,
+    "wires": [
+      [
+        "wc_del_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_del_resp",
+    "type": "http response",
+    "z": "wc_tab_excluir_esteira",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "x": 1000,
+    "y": 120,
+    "wires": []
+  },
+  {
+    "id": "wc_del_catch",
+    "type": "catch",
+    "z": "wc_tab_excluir_esteira",
+    "name": "Pega qualquer erro",
+    "scope": null,
+    "uncaught": false,
+    "x": 170,
+    "y": 220,
+    "wires": [
+      [
+        "wc_del_erro"
+      ]
+    ]
+  },
+  {
+    "id": "wc_del_erro",
+    "type": "function",
+    "z": "wc_tab_excluir_esteira",
+    "name": "Monta resposta de erro",
+    "func": "var texto = (msg.error && msg.error.message) ? msg.error.message : 'erro desconhecido';\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Falha ao excluir esteira: ' + texto };\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 220,
+    "wires": [
+      [
+        "wc_del_resp"
+      ]
+    ]
+  }
+]

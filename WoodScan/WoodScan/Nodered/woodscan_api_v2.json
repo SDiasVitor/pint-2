@@ -1,0 +1,412 @@
+[
+  {
+    "id": "wc_tab_api_v2",
+    "type": "tab",
+    "label": "WoodScan - API (Login, Usuarios, Esteiras)",
+    "disabled": false,
+    "info": "Login e cadastro de usuario/esteira no MySQL. Contagem/temperatura/umidade sao lidas do CSV e mescladas na resposta."
+  },
+  {
+    "id": "wc_mysqldb",
+    "type": "MySQLdatabase",
+    "name": "WoodScan DB",
+    "host": "localhost",
+    "port": "3306",
+    "db": "woodscan",
+    "tz": "",
+    "charset": "UTF8"
+  },
+  {
+    "id": "wc_http_login",
+    "type": "http in",
+    "z": "wc_tab_api_v2",
+    "name": "POST /api/login",
+    "url": "/api/login",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 160,
+    "y": 100,
+    "wires": [
+      [
+        "wc_func_login_hash"
+      ]
+    ]
+  },
+  {
+    "id": "wc_func_login_hash",
+    "type": "function",
+    "z": "wc_tab_api_v2",
+    "name": "Monta SQL de login",
+    "func": "var login = msg.payload && msg.payload.login;\nvar senha = msg.payload && msg.payload.senha;\n\nif (!login || !senha) {\n    msg.statusCode = 400;\n    msg.payload = { erro: 'Informe login e senha' };\n    node.send([null, msg]);\n    return null;\n}\n\nmsg.senhaHash = crypto.createHash('sha256').update(senha).digest('hex');\nmsg.topic = 'SELECT id, nome, login, senha_hash, perfil FROM usuarios WHERE login = ?';\nmsg.payload = [login];\nreturn msg;",
+    "outputs": 2,
+    "x": 400,
+    "y": 100,
+    "wires": [
+      [
+        "wc_mysql_login"
+      ],
+      [
+        "wc_resp_login"
+      ]
+    ],
+    "libs": [
+      {
+        "var": "crypto",
+        "module": "crypto"
+      }
+    ]
+  },
+  {
+    "id": "wc_mysql_login",
+    "type": "mysql",
+    "z": "wc_tab_api_v2",
+    "mydb": "wc_mysqldb",
+    "name": "Busca usuario",
+    "x": 640,
+    "y": 100,
+    "wires": [
+      [
+        "wc_func_login_check"
+      ]
+    ]
+  },
+  {
+    "id": "wc_func_login_check",
+    "type": "function",
+    "z": "wc_tab_api_v2",
+    "name": "Confere senha",
+    "func": "var senhaHash = msg.senhaHash;\nvar linhas = msg.payload;\n\nif (!linhas || !linhas.length || linhas[0].senha_hash !== senhaHash) {\n    msg.statusCode = 401;\n    msg.payload = { erro: 'Login ou senha invalidos' };\n    return msg;\n}\n\nvar usuario = linhas[0];\nmsg.payload = { id: usuario.id, nome: usuario.nome, login: usuario.login, perfil: usuario.perfil };\nreturn msg;",
+    "outputs": 1,
+    "x": 860,
+    "y": 100,
+    "wires": [
+      [
+        "wc_resp_login"
+      ]
+    ]
+  },
+  {
+    "id": "wc_resp_login",
+    "type": "http response",
+    "z": "wc_tab_api_v2",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {},
+    "x": 1080,
+    "y": 100,
+    "wires": []
+  },
+  {
+    "id": "wc_http_cad_user",
+    "type": "http in",
+    "z": "wc_tab_api_v2",
+    "name": "POST /api/usuarios",
+    "url": "/api/usuarios",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 170,
+    "y": 200,
+    "wires": [
+      [
+        "wc_func_cad_user"
+      ]
+    ]
+  },
+  {
+    "id": "wc_func_cad_user",
+    "type": "function",
+    "z": "wc_tab_api_v2",
+    "name": "Monta SQL de cadastro",
+    "func": "var nome = msg.payload && msg.payload.nome;\nvar login = msg.payload && msg.payload.login;\nvar senha = msg.payload && msg.payload.senha;\n\nif (!nome || !login || !senha) {\n    msg.statusCode = 400;\n    msg.payload = { erro: 'Informe nome, login e senha' };\n    node.send([null, msg]);\n    return null;\n}\n\nvar senhaHash = crypto.createHash('sha256').update(senha).digest('hex');\nmsg.loginCadastrado = login;\nmsg.nomeCadastrado = nome;\nmsg.topic = \"INSERT INTO usuarios (nome, login, senha_hash, perfil) VALUES (?, ?, ?, 'operador')\";\nmsg.payload = [nome, login, senhaHash];\nreturn msg;",
+    "outputs": 2,
+    "x": 420,
+    "y": 200,
+    "wires": [
+      [
+        "wc_mysql_cad_user"
+      ],
+      [
+        "wc_resp_cad_user"
+      ]
+    ],
+    "libs": [
+      {
+        "var": "crypto",
+        "module": "crypto"
+      }
+    ]
+  },
+  {
+    "id": "wc_mysql_cad_user",
+    "type": "mysql",
+    "z": "wc_tab_api_v2",
+    "mydb": "wc_mysqldb",
+    "name": "Insere usuario",
+    "x": 650,
+    "y": 200,
+    "wires": [
+      [
+        "wc_func_cad_user_fmt"
+      ]
+    ]
+  },
+  {
+    "id": "wc_func_cad_user_fmt",
+    "type": "function",
+    "z": "wc_tab_api_v2",
+    "name": "Formata resposta",
+    "func": "msg.payload = { nome: msg.nomeCadastrado, login: msg.loginCadastrado, perfil: 'operador', status: 'usuario cadastrado' };\nreturn msg;",
+    "outputs": 1,
+    "x": 880,
+    "y": 200,
+    "wires": [
+      [
+        "wc_resp_cad_user"
+      ]
+    ]
+  },
+  {
+    "id": "wc_resp_cad_user",
+    "type": "http response",
+    "z": "wc_tab_api_v2",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {},
+    "x": 1080,
+    "y": 200,
+    "wires": []
+  },
+  {
+    "id": "wc_http_cad_est",
+    "type": "http in",
+    "z": "wc_tab_api_v2",
+    "name": "POST /api/esteiras",
+    "url": "/api/esteiras",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 170,
+    "y": 300,
+    "wires": [
+      [
+        "wc_func_cad_est"
+      ]
+    ]
+  },
+  {
+    "id": "wc_func_cad_est",
+    "type": "function",
+    "z": "wc_tab_api_v2",
+    "name": "Monta SQL de cadastro",
+    "func": "var codigo = msg.payload && msg.payload.codigo;\nvar nome = msg.payload && msg.payload.nome;\n\nif (!codigo || !nome) {\n    msg.statusCode = 400;\n    msg.payload = { erro: 'Informe codigo e nome' };\n    node.send([null, msg]);\n    return null;\n}\n\nmsg.codigoCadastrado = codigo;\nmsg.nomeCadastrado = nome;\nmsg.topic = 'INSERT INTO esteiras (codigo, nome) VALUES (?, ?)';\nmsg.payload = [codigo, nome];\nreturn msg;",
+    "outputs": 2,
+    "x": 420,
+    "y": 300,
+    "wires": [
+      [
+        "wc_mysql_cad_est"
+      ],
+      [
+        "wc_resp_cad_est"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mysql_cad_est",
+    "type": "mysql",
+    "z": "wc_tab_api_v2",
+    "mydb": "wc_mysqldb",
+    "name": "Insere esteira",
+    "x": 650,
+    "y": 300,
+    "wires": [
+      [
+        "wc_func_cad_est_fmt"
+      ]
+    ]
+  },
+  {
+    "id": "wc_func_cad_est_fmt",
+    "type": "function",
+    "z": "wc_tab_api_v2",
+    "name": "Formata resposta",
+    "func": "msg.payload = { codigo: msg.codigoCadastrado, nome: msg.nomeCadastrado, status: 'esteira cadastrada' };\nreturn msg;",
+    "outputs": 1,
+    "x": 880,
+    "y": 300,
+    "wires": [
+      [
+        "wc_resp_cad_est"
+      ]
+    ]
+  },
+  {
+    "id": "wc_resp_cad_est",
+    "type": "http response",
+    "z": "wc_tab_api_v2",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {},
+    "x": 1080,
+    "y": 300,
+    "wires": []
+  },
+  {
+    "id": "wc_http_list_v2",
+    "type": "http in",
+    "z": "wc_tab_api_v2",
+    "name": "GET /api/esteiras",
+    "url": "/api/esteiras",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 160,
+    "y": 400,
+    "wires": [
+      [
+        "wc_func_list_sql_v2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_func_list_sql_v2",
+    "type": "function",
+    "z": "wc_tab_api_v2",
+    "name": "Monta SQL",
+    "func": "msg.topic = 'SELECT codigo, nome FROM esteiras ORDER BY codigo';\nmsg.payload = [];\nreturn msg;",
+    "outputs": 1,
+    "x": 380,
+    "y": 400,
+    "wires": [
+      [
+        "wc_mysql_list_v2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mysql_list_v2",
+    "type": "mysql",
+    "z": "wc_tab_api_v2",
+    "mydb": "wc_mysqldb",
+    "name": "Lista esteiras",
+    "x": 600,
+    "y": 400,
+    "wires": [
+      [
+        "wc_func_list_merge_v2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_func_list_merge_v2",
+    "type": "function",
+    "z": "wc_tab_api_v2",
+    "name": "Mescla com dados do CSV",
+    "func": "function lerCsv() {\n    const CAMINHO_CSV = 'C:\\\\woodscan\\\\contagem.csv';\n    if (!fs.existsSync(CAMINHO_CSV)) return [];\n    const linhas = fs.readFileSync(CAMINHO_CSV, 'utf8').trim().split('\\n');\n    linhas.shift(); // remove cabecalho\n    return linhas.filter(Boolean).map(function (linha) {\n        var partes = linha.split(',');\n        return {\n            data: partes[0], turno: partes[1], esteira: partes[2],\n            timestamp: partes[3], temperatura: partes[4], umidade: partes[5]\n        };\n    });\n}\n\nfunction turnoAtual() {\n    var hora = new Date().getHours();\n    if (hora >= 6 && hora < 14) return 'manha';\n    if (hora >= 14 && hora < 22) return 'tarde';\n    return 'noite';\n}\n\nfunction resumoEsteira(codigo) {\n    var registros = lerCsv().filter(function (r) { return r.esteira === codigo; });\n    var hoje = new Date().toISOString().slice(0, 10);\n    var turno = turnoAtual();\n    var doTurno = registros.filter(function (r) { return r.data === hoje && r.turno === turno; });\n    var ultimo = registros[registros.length - 1];\n\n    return {\n        contagem_atual: doTurno.length,\n        turno_atual: doTurno.length > 0 ? turno : null,\n        temperatura: ultimo ? parseFloat(ultimo.temperatura) || null : null,\n        umidade: ultimo ? parseFloat(ultimo.umidade) || null : null\n    };\n}\n\nvar esteiras = msg.payload.map(function (e) {\n    var resumo = resumoEsteira(e.codigo);\n    return {\n        esteira: e.codigo, nome: e.nome,\n        contagem_atual: resumo.contagem_atual, turno_atual: resumo.turno_atual,\n        temperatura: resumo.temperatura, umidade: resumo.umidade\n    };\n});\n\nmsg.payload = esteiras;\nreturn msg;",
+    "outputs": 1,
+    "x": 840,
+    "y": 400,
+    "wires": [
+      [
+        "wc_resp_list_v2"
+      ]
+    ],
+    "libs": [
+      {
+        "var": "fs",
+        "module": "fs"
+      }
+    ]
+  },
+  {
+    "id": "wc_resp_list_v2",
+    "type": "http response",
+    "z": "wc_tab_api_v2",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {},
+    "x": 1080,
+    "y": 400,
+    "wires": []
+  },
+  {
+    "id": "wc_http_single_v2",
+    "type": "http in",
+    "z": "wc_tab_api_v2",
+    "name": "GET /api/esteiras/:esteiraId",
+    "url": "/api/esteiras/:esteiraId",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 190,
+    "y": 500,
+    "wires": [
+      [
+        "wc_func_single_sql_v2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_func_single_sql_v2",
+    "type": "function",
+    "z": "wc_tab_api_v2",
+    "name": "Monta SQL",
+    "func": "msg.esteiraId = msg.req.params.esteiraId;\nmsg.topic = 'SELECT codigo, nome FROM esteiras WHERE codigo = ?';\nmsg.payload = [msg.esteiraId];\nreturn msg;",
+    "outputs": 1,
+    "x": 420,
+    "y": 500,
+    "wires": [
+      [
+        "wc_mysql_single_v2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_mysql_single_v2",
+    "type": "mysql",
+    "z": "wc_tab_api_v2",
+    "mydb": "wc_mysqldb",
+    "name": "Busca esteira",
+    "x": 640,
+    "y": 500,
+    "wires": [
+      [
+        "wc_func_single_merge_v2"
+      ]
+    ]
+  },
+  {
+    "id": "wc_func_single_merge_v2",
+    "type": "function",
+    "z": "wc_tab_api_v2",
+    "name": "Mescla com dados do CSV",
+    "func": "function lerCsv() {\n    const CAMINHO_CSV = 'C:\\\\woodscan\\\\contagem.csv';\n    if (!fs.existsSync(CAMINHO_CSV)) return [];\n    const linhas = fs.readFileSync(CAMINHO_CSV, 'utf8').trim().split('\\n');\n    linhas.shift(); // remove cabecalho\n    return linhas.filter(Boolean).map(function (linha) {\n        var partes = linha.split(',');\n        return {\n            data: partes[0], turno: partes[1], esteira: partes[2],\n            timestamp: partes[3], temperatura: partes[4], umidade: partes[5]\n        };\n    });\n}\n\nfunction turnoAtual() {\n    var hora = new Date().getHours();\n    if (hora >= 6 && hora < 14) return 'manha';\n    if (hora >= 14 && hora < 22) return 'tarde';\n    return 'noite';\n}\n\nfunction resumoEsteira(codigo) {\n    var registros = lerCsv().filter(function (r) { return r.esteira === codigo; });\n    var hoje = new Date().toISOString().slice(0, 10);\n    var turno = turnoAtual();\n    var doTurno = registros.filter(function (r) { return r.data === hoje && r.turno === turno; });\n    var ultimo = registros[registros.length - 1];\n\n    return {\n        contagem_atual: doTurno.length,\n        turno_atual: doTurno.length > 0 ? turno : null,\n        temperatura: ultimo ? parseFloat(ultimo.temperatura) || null : null,\n        umidade: ultimo ? parseFloat(ultimo.umidade) || null : null\n    };\n}\n\nif (!msg.payload || !msg.payload.length) {\n    msg.statusCode = 404;\n    msg.payload = { erro: 'Esteira nao encontrada' };\n    return msg;\n}\n\nvar esteira = msg.payload[0];\nvar resumo = resumoEsteira(esteira.codigo);\nmsg.payload = {\n    esteira: esteira.codigo, nome: esteira.nome,\n    contagem_atual: resumo.contagem_atual, turno_atual: resumo.turno_atual,\n    temperatura: resumo.temperatura, umidade: resumo.umidade\n};\nreturn msg;",
+    "outputs": 1,
+    "x": 880,
+    "y": 500,
+    "wires": [
+      [
+        "wc_resp_single_v2"
+      ]
+    ],
+    "libs": [
+      {
+        "var": "fs",
+        "module": "fs"
+      }
+    ]
+  },
+  {
+    "id": "wc_resp_single_v2",
+    "type": "http response",
+    "z": "wc_tab_api_v2",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {},
+    "x": 1120,
+    "y": 500,
+    "wires": []
+  }
+]

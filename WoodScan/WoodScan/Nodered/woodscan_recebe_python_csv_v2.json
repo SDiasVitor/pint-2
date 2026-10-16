@@ -1,0 +1,91 @@
+[
+  {
+    "id": "wc_tab_python_sim",
+    "type": "tab",
+    "label": "WoodScan - Recebe Simulacao Python (CSV)",
+    "disabled": false,
+    "info": "Recebe POST JSON do script Python (Raspberry Pi simulando as 5 esteiras: contagem + temperatura + umidade) e grava tudo numa linha do CSV."
+  },
+  {
+    "id": "wc_py_http_in",
+    "type": "http in",
+    "z": "wc_tab_python_sim",
+    "name": "POST /api/eventos",
+    "url": "/api/eventos",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 160,
+    "y": 140,
+    "wires": [
+      [
+        "wc_py_func_validate"
+      ]
+    ]
+  },
+  {
+    "id": "wc_py_func_validate",
+    "type": "function",
+    "z": "wc_tab_python_sim",
+    "name": "Valida dados recebidos",
+    "func": "var esteiras_validas = ['esteira1', 'esteira2', 'esteira3', 'esteira4', 'esteira5'];\nvar esteira = msg.payload && msg.payload.esteira;\nvar temperatura = msg.payload && msg.payload.temperatura;\nvar umidade = msg.payload && msg.payload.umidade;\n\nif (!esteira || esteiras_validas.indexOf(esteira) === -1) {\n    msg.statusCode = 400;\n    msg.payload = { erro: 'Campo esteira invalido ou ausente', valores_aceitos: esteiras_validas };\n    return [null, msg];\n}\n\nmsg.esteira = esteira;\nmsg.temperatura = (typeof temperatura === 'number') ? temperatura : '';\nmsg.umidade = (typeof umidade === 'number') ? umidade : '';\nreturn [msg, null];",
+    "outputs": 2,
+    "x": 400,
+    "y": 140,
+    "wires": [
+      [
+        "wc_py_func_csv"
+      ],
+      [
+        "wc_py_http_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_py_func_csv",
+    "type": "function",
+    "z": "wc_tab_python_sim",
+    "name": "Calcula turno e grava linha no CSV",
+    "func": "// Troque esse caminho se quiser salvar em outro lugar.\n// A PASTA precisa existir (o arquivo, se nao existir, e criado sozinho).\nconst CAMINHO_CSV = 'C:\\\\woodscan\\\\contagem.csv';\nconst CABECALHO = 'data,turno,esteira,timestamp,temperatura,umidade\\n';\n\nvar agora = new Date();\nvar hora = agora.getHours();\nvar turno;\nif (hora >= 6 && hora < 14) turno = 'manha';\nelse if (hora >= 14 && hora < 22) turno = 'tarde';\nelse turno = 'noite';\n\nvar data = agora.toISOString().slice(0, 10);\nvar timestamp = agora.toISOString();\n\ntry {\n    if (!fs.existsSync(CAMINHO_CSV)) {\n        fs.writeFileSync(CAMINHO_CSV, CABECALHO);\n    }\n    var linha = [data, turno, msg.esteira, timestamp, msg.temperatura, msg.umidade].join(',') + '\\n';\n    fs.appendFileSync(CAMINHO_CSV, linha);\n} catch (erro) {\n    node.error('Falha ao gravar CSV: ' + erro.message, msg);\n    msg.statusCode = 500;\n    msg.payload = { erro: 'Falha ao gravar no arquivo CSV' };\n    return msg;\n}\n\nmsg.payload = {\n    esteira: msg.esteira, turno: turno, data: data, timestamp: timestamp,\n    temperatura: msg.temperatura, umidade: msg.umidade,\n    status: 'lamina registrada em CSV'\n};\nreturn msg;",
+    "outputs": 1,
+    "x": 680,
+    "y": 140,
+    "wires": [
+      [
+        "wc_py_debug",
+        "wc_py_http_resp"
+      ]
+    ],
+    "libs": [
+      {
+        "var": "fs",
+        "module": "fs"
+      }
+    ]
+  },
+  {
+    "id": "wc_py_debug",
+    "type": "debug",
+    "z": "wc_tab_python_sim",
+    "name": "OK - registro gravado no CSV",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "x": 940,
+    "y": 100,
+    "wires": []
+  },
+  {
+    "id": "wc_py_http_resp",
+    "type": "http response",
+    "z": "wc_tab_python_sim",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {},
+    "x": 940,
+    "y": 200,
+    "wires": []
+  }
+]
