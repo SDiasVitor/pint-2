@@ -1391,3 +1391,135 @@ button.chip-esteira:hover {
   font-size: 13px;
   color: var(--texto-suave);
 }
+
+/* ---------- análise de dados ---------- */
+
+:root {
+  --cor-media: #1f2529;
+  --cor-mediana: #2a78d6;
+  --cor-moda: #b4421f;
+}
+
+:root[data-theme='dark'] {
+  --cor-media: #ece7df;
+  --cor-mediana: #6da7ec;
+  --cor-moda: #ec835a;
+}
+
+.etapas-tratamento {
+  margin-bottom: 18px;
+}
+
+.etapas-tratamento ol {
+  margin: 14px 0 0;
+  padding-left: 22px;
+  display: grid;
+  gap: 10px;
+}
+
+.etapas-tratamento li {
+  color: var(--texto);
+  padding-left: 4px;
+}
+
+.etapas-tratamento li strong {
+  display: inline-block;
+  min-width: 96px;
+  margin-right: 8px;
+  color: var(--grafite);
+}
+
+.medidas-centrais {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin: 14px 0 18px;
+}
+
+.medida {
+  padding: 12px 14px;
+  border: 1px solid var(--linha);
+  border-left: 4px solid var(--linha-forte);
+  border-radius: 4px;
+  background: var(--superficie);
+}
+
+.medida-media {
+  border-left-color: var(--cor-media);
+}
+
+.medida-mediana {
+  border-left-color: var(--cor-mediana);
+  border-left-style: dashed;
+}
+
+.medida-moda {
+  border-left-color: var(--cor-moda);
+  border-left-style: dotted;
+}
+
+.medida-nome {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--texto-suave);
+}
+
+.medida-valor {
+  margin: 4px 0 2px;
+  font-family: var(--fonte-numero);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--grafite);
+  font-variant-numeric: tabular-nums;
+}
+
+.medida-explica {
+  font-size: 13px;
+  color: var(--texto-suave);
+}
+
+.histograma-coluna {
+  fill: var(--mdf);
+}
+
+.histograma-coluna.fora-do-calculo {
+  fill: var(--linha-forte);
+}
+
+.histograma-marcador {
+  stroke-width: 2;
+}
+
+.histograma-marcador.marcador-media { stroke: var(--cor-media); }
+.histograma-marcador.marcador-mediana { stroke: var(--cor-mediana); }
+.histograma-marcador.marcador-moda { stroke: var(--cor-moda); }
+
+.histograma-rotulo {
+  font-family: var(--fonte);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.histograma-rotulo.marcador-media { fill: var(--cor-media); }
+.histograma-rotulo.marcador-mediana { fill: var(--cor-mediana); }
+.histograma-rotulo.marcador-moda { fill: var(--cor-moda); }
+
+.interpretacao {
+  margin-top: 12px;
+  padding: 10px 12px;
+  font-size: 15px;
+  color: var(--texto);
+  background: var(--mdf-fundo);
+  border-radius: 4px;
+}
+
+.tabela-comparacao th.grupo {
+  text-align: center;
+  border-left: 1px solid var(--mdf-claro);
+}
+
+.tabela-comparacao td,
+.tabela-comparacao th {
+  white-space: nowrap;
+}

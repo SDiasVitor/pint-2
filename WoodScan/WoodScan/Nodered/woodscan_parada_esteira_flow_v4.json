@@ -4,7 +4,7 @@
     "type": "tab",
     "label": "WoodScan - Parada de esteira",
     "disabled": false,
-    "info": "Operador PARA a esteira pelo site. So a manutencao (login + senha) LIBERA. A liberacao calcula o tempo parado e grava em paradas.csv e manutencoes.csv. Versao 3: grava tambem o tipo de manutencao e o defeito encontrado."
+    "info": "Operador PARA a esteira pelo site. So a manutencao (login + senha) LIBERA. A liberacao calcula o tempo parado e grava em paradas.csv e manutencoes.csv. Versao 3: grava tambem o tipo de manutencao e o defeito encontrado. Versao 4: status devolve o tipo de cada esteira + rota para definir o tipo."
   },
   {
     "id": "wc_pa_c1",
@@ -38,7 +38,7 @@
     "type": "function",
     "z": "wc_tab_parada",
     "name": "Monta SQL",
-    "func": "// Lista a situacao de todas as esteiras (usado pelo site E pela Raspberry)\nmsg.topic = 'SELECT codigo, em_manutencao, parada_em FROM esteiras';\nmsg.payload = [];\nreturn msg;",
+    "func": "// Lista situacao e TIPO de todas as esteiras (usado pelo site E pela Raspberry)\nmsg.topic = 'SELECT codigo, tipo, em_manutencao, parada_em FROM esteiras';\nmsg.payload = [];\nreturn msg;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -72,7 +72,7 @@
     "type": "function",
     "z": "wc_tab_parada",
     "name": "Formata resposta",
-    "func": "// Devolve { esteiras: { esteira1: { parada: false, parada_em: null }, ... } }\nvar esteiras = {};\n(Array.isArray(msg.payload) ? msg.payload : []).forEach(function (linha) {\n    esteiras[linha.codigo] = { parada: Boolean(linha.em_manutencao), parada_em: linha.parada_em || null };\n});\nmsg.statusCode = 200;\nmsg.payload = { esteiras: esteiras };\nreturn msg;",
+    "func": "// Devolve { esteiras: { esteira1: { tipo: 'serra', parada: false, parada_em: null }, ... } }\n// A Raspberry usa o tipo para criar o objeto da classe certa (polimorfismo).\nvar esteiras = {};\n(Array.isArray(msg.payload) ? msg.payload : []).forEach(function (linha) {\n    esteiras[linha.codigo] = {\n        tipo: linha.tipo || 'serra',\n        parada: Boolean(linha.em_manutencao),\n        parada_em: linha.parada_em || null\n    };\n});\nmsg.statusCode = 200;\nmsg.payload = { esteiras: esteiras };\nreturn msg;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -866,6 +866,142 @@
     "wires": [
       [
         "wc_pl_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_tp_c",
+    "type": "comment",
+    "z": "wc_tab_parada",
+    "name": "5) Tipo da maquina (serra, guilhotina, laminadora)",
+    "info": "",
+    "x": 250,
+    "y": 1180,
+    "wires": []
+  },
+  {
+    "id": "wc_tp_in",
+    "type": "http in",
+    "z": "wc_tab_parada",
+    "name": "POST /api/esteiras/:esteiraId/tipo",
+    "url": "/api/esteiras/:esteiraId/tipo",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 200,
+    "y": 1230,
+    "wires": [
+      [
+        "wc_tp_sql"
+      ]
+    ]
+  },
+  {
+    "id": "wc_tp_sql",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Valida tipo + SQL",
+    "func": "// POST /api/esteiras/esteira6/tipo  com  { \"tipo\": \"guilhotina\" }\nvar TIPOS = ['serra', 'guilhotina', 'laminadora'];\nvar tipo = msg.payload && msg.payload.tipo;\nif (TIPOS.indexOf(tipo) === -1) {\n    msg.statusCode = 400;\n    msg.payload = { erro: 'Tipo invalido', valores_aceitos: TIPOS };\n    return [null, msg];\n}\nmsg.esteiraId = msg.req.params.esteiraId;\nmsg.tipo = tipo;\nmsg.topic = 'UPDATE esteiras SET tipo = ? WHERE codigo = ?';\nmsg.payload = [tipo, msg.esteiraId];\nreturn [msg, null];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 450,
+    "y": 1230,
+    "wires": [
+      [
+        "wc_tp_db"
+      ],
+      [
+        "wc_tp_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_tp_db",
+    "type": "mysql",
+    "z": "wc_tab_parada",
+    "mydb": "wc_mysqldb",
+    "name": "Grava tipo",
+    "x": 640,
+    "y": 1230,
+    "wires": [
+      [
+        "wc_tp_ok"
+      ]
+    ]
+  },
+  {
+    "id": "wc_tp_ok",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Confere se gravou",
+    "func": "var linhas = (msg.payload && msg.payload.affectedRows) || 0;\nif (linhas === 0) {\n    msg.statusCode = 404;\n    msg.payload = { erro: 'Esteira ' + msg.esteiraId + ' nao encontrada' };\n    return msg;\n}\nmsg.statusCode = 200;\nmsg.payload = { esteira: msg.esteiraId, tipo: msg.tipo };\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 830,
+    "y": 1230,
+    "wires": [
+      [
+        "wc_tp_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_tp_resp",
+    "type": "http response",
+    "z": "wc_tab_parada",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "x": 1030,
+    "y": 1230,
+    "wires": []
+  },
+  {
+    "id": "wc_tp_catch",
+    "type": "catch",
+    "z": "wc_tab_parada",
+    "name": "Erro no tipo",
+    "scope": [
+      "wc_tp_sql",
+      "wc_tp_db",
+      "wc_tp_ok"
+    ],
+    "uncaught": false,
+    "x": 150,
+    "y": 1290,
+    "wires": [
+      [
+        "wc_tp_erro"
+      ]
+    ]
+  },
+  {
+    "id": "wc_tp_erro",
+    "type": "function",
+    "z": "wc_tab_parada",
+    "name": "Monta resposta de erro",
+    "func": "var texto = (msg.error && msg.error.message) ? msg.error.message : 'erro desconhecido';\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Falha na parada/liberacao: ' + texto };\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 1290,
+    "wires": [
+      [
+        "wc_tp_resp"
       ]
     ]
   }

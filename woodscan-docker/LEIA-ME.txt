@@ -1,0 +1,41 @@
+WOODSCAN NO DOCKER
+==================
+
+O que tem aqui
+  mysql/      banco woodscan (criado sozinho na 1a vez, com as 5 esteiras e os usuarios)
+  nodered/    Node-RED com todos os fluxos do WoodScan
+  web/        site React (servido pelo Nginx)
+  simulador_esteiras_poo.py   simulador da Raspberry Pi (so para referencia)
+
+ANTES DE TUDO
+  - Precisa do Docker Desktop instalado e aberto ("Engine running").
+    A instalacao pede permissao de ADMINISTRADOR.
+  - Feche o Node-RED que voce roda no cmd (a porta 1880 vai ser usada pelo Docker).
+
+LIGAR (no cmd, dentro desta pasta)
+  docker compose up -d --build
+  (a 1a vez demora alguns minutos)
+
+ACESSAR
+  Site:      http://localhost:8080        (neste PC)
+             http://IP-DO-PC:8080         (outros PCs da rede; IP pelo comando ipconfig)
+  Node-RED:  http://localhost:1880
+  Login de teste:   teste1 / 123456       (operador)
+  Manutencao:       manutencao1 / 1234
+
+RASPBERRY PI
+  No simulador_esteiras_poo.py da Pi, NODE_RED_HOST = IP do PC que esta com o Docker.
+
+CSV E POWER BI
+  Os CSV continuam sendo gravados em C:\woodscan, entao o Power BI funciona igual.
+
+DESLIGAR
+  docker compose down          (os dados ficam guardados)
+
+APAGAR TUDO E COMECAR DO ZERO (banco e fluxos)
+  docker compose down -v
+
+USAR OS SEUS FLUXOS MAIS NOVOS (opcional)
+  Troque nodered\seed\flows.json pelo flows.json exportado do seu Node-RED
+  e rode:  docker compose down -v   e depois   docker compose up -d --build
+  (os caminhos C:\woodscan e a conexao do MySQL sao ajustados automaticamente)

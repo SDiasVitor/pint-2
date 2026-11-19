@@ -4,7 +4,7 @@
     "type": "tab",
     "label": "WoodScan - Dashboard",
     "disabled": false,
-    "info": "GET /api/dashboard?data=AAAA-MM-DD -> laminas de cada esteira por hora do dia, lidas do contagem.csv. | GET /api/dashboard/manutencao?inicio=&fim= -> tempo parado e defeitos (paradas.csv)."
+    "info": "GET /api/dashboard?data=AAAA-MM-DD -> laminas de cada esteira por hora do dia, lidas do contagem.csv. | GET /api/dashboard/manutencao?inicio=&fim= -> tempo parado e defeitos (paradas.csv). | GET /api/analise?data= -> tabelas de frequencia para a pagina de Analise de Dados."
   },
   {
     "id": "wc_db_in",
@@ -307,6 +307,163 @@
     "wires": [
       [
         "wc_dm_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_an_c",
+    "type": "comment",
+    "z": "wc_tab_dashboard",
+    "name": "Analise de dados: frequencias de temperatura/umidade e laminas por hora",
+    "info": "",
+    "x": 290,
+    "y": 580,
+    "wires": []
+  },
+  {
+    "id": "wc_an_in",
+    "type": "http in",
+    "z": "wc_tab_dashboard",
+    "name": "GET /api/analise",
+    "url": "/api/analise",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 140,
+    "y": 630,
+    "wires": [
+      [
+        "wc_an_ler"
+      ]
+    ]
+  },
+  {
+    "id": "wc_an_ler",
+    "type": "file in",
+    "z": "wc_tab_dashboard",
+    "name": "Le contagem.csv",
+    "filename": "C:\\woodscan\\contagem.csv",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "none",
+    "allProps": false,
+    "x": 350,
+    "y": 630,
+    "wires": [
+      [
+        "wc_an_fn"
+      ]
+    ]
+  },
+  {
+    "id": "wc_an_fn",
+    "type": "function",
+    "z": "wc_tab_dashboard",
+    "name": "Limpa e monta tabelas de frequencia",
+    "func": "// msg.payload = texto do contagem.csv ('' se ainda nao existe)\n// GET /api/analise?data=2026-10-21  (sem data = hoje)\n// Prepara os dados para a pagina de Analise de Dados:\n//   - tabela de frequencia da temperatura e da umidade de cada esteira\n//     (quantas vezes cada valor apareceu -> o site calcula media, mediana e moda)\n//   - laminas cortadas em cada hora\n//   - quantas leituras chegaram (brutas) e quantas foram descartadas na limpeza\nfunction dataLocal(d) {\n    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');\n}\n\nvar hoje = dataLocal(new Date());\nvar pedida = msg.req && msg.req.query ? String(msg.req.query.data || '') : '';\nvar dia = /^\\d{4}-\\d{2}-\\d{2}$/.test(pedida) ? pedida : hoje;\n\nvar linhas = (typeof msg.payload === 'string' ? msg.payload : '').split(/\\r?\\n/);\nvar cabecalho = (linhas[0] || '').split(',');\nvar iEsteira = cabecalho.indexOf('esteira');\nvar iTimestamp = cabecalho.indexOf('timestamp');\nvar iTemp = cabecalho.indexOf('temperatura');\nvar iUmid = cabecalho.indexOf('umidade');\n\nvar esteiras = {};\nfunction daEsteira(codigo) {\n    if (!esteiras[codigo]) {\n        esteiras[codigo] = {\n            brutas: 0,\n            descartadas: 0,\n            temperatura: {},          // { \"25.3\": 12, ... }\n            umidade: {},\n            laminas_por_hora: new Array(24).fill(0)\n        };\n    }\n    return esteiras[codigo];\n}\n\n// limpeza: valor vazio, nao numerico ou fora de uma faixa possivel e descartado\nfunction valorValido(texto, minimo, maximo) {\n    if (texto === undefined || String(texto).trim() === '') return null;\n    var n = Number(texto);\n    if (!isFinite(n) || n < minimo || n > maximo) return null;\n    return Math.round(n * 10) / 10;\n}\n\nif (iEsteira !== -1 && iTimestamp !== -1) {\n    for (var i = 1; i < linhas.length; i++) {\n        if (!linhas[i].trim()) continue;\n        var c = linhas[i].split(',');\n        var momento = new Date(c[iTimestamp]);\n        if (isNaN(momento.getTime()) || dataLocal(momento) !== dia) continue;\n\n        var e = daEsteira(c[iEsteira]);\n        e.brutas++;\n        e.laminas_por_hora[momento.getHours()]++; // toda linha e uma lamina cortada\n\n        var t = iTemp !== -1 ? valorValido(c[iTemp], -10, 80) : null;\n        var u = iUmid !== -1 ? valorValido(c[iUmid], 0, 100) : null;\n        if (t === null || u === null) {\n            e.descartadas++;\n            continue;\n        }\n        e.temperatura[t.toFixed(1)] = (e.temperatura[t.toFixed(1)] || 0) + 1;\n        e.umidade[u.toFixed(1)] = (e.umidade[u.toFixed(1)] || 0) + 1;\n    }\n}\n\nvar ultimaHora = dia === hoje ? new Date().getHours() : 23;\nif (dia > hoje) ultimaHora = -1;\n\nmsg.statusCode = 200;\nmsg.payload = { data: dia, ultima_hora: ultimaHora, esteiras: esteiras };\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 620,
+    "y": 630,
+    "wires": [
+      [
+        "wc_an_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_an_resp",
+    "type": "http response",
+    "z": "wc_tab_dashboard",
+    "name": "Resposta JSON",
+    "statusCode": "",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "x": 880,
+    "y": 630,
+    "wires": []
+  },
+  {
+    "id": "wc_an_catch_ler",
+    "type": "catch",
+    "z": "wc_tab_dashboard",
+    "name": "contagem.csv nao existe",
+    "scope": [
+      "wc_an_ler"
+    ],
+    "uncaught": false,
+    "x": 360,
+    "y": 690,
+    "wires": [
+      [
+        "wc_an_vazio"
+      ]
+    ]
+  },
+  {
+    "id": "wc_an_vazio",
+    "type": "function",
+    "z": "wc_tab_dashboard",
+    "name": "Arquivo ainda nao existe?",
+    "func": "// So trata como vazio quando o arquivo nao existe.\nvar texto = (msg.error && msg.error.message) ? msg.error.message : '';\nif (texto.indexOf('ENOENT') !== -1) {\n    msg.payload = '';\n    return [msg, null];\n}\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Nao foi possivel ler o contagem.csv (aberto no Excel?): ' + texto };\nreturn [null, msg];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 620,
+    "y": 690,
+    "wires": [
+      [
+        "wc_an_fn"
+      ],
+      [
+        "wc_an_resp"
+      ]
+    ]
+  },
+  {
+    "id": "wc_an_catch",
+    "type": "catch",
+    "z": "wc_tab_dashboard",
+    "name": "Erro na analise",
+    "scope": [
+      "wc_an_fn"
+    ],
+    "uncaught": false,
+    "x": 350,
+    "y": 750,
+    "wires": [
+      [
+        "wc_an_erro"
+      ]
+    ]
+  },
+  {
+    "id": "wc_an_erro",
+    "type": "function",
+    "z": "wc_tab_dashboard",
+    "name": "Monta resposta de erro",
+    "func": "var texto = (msg.error && msg.error.message) ? msg.error.message : 'erro desconhecido';\nmsg.statusCode = 500;\nmsg.payload = { erro: 'Falha na analise de dados: ' + texto };\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 620,
+    "y": 750,
+    "wires": [
+      [
+        "wc_an_resp"
       ]
     ]
   }

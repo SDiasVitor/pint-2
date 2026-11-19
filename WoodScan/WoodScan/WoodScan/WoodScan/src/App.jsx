@@ -9,6 +9,7 @@ import CadastroEsteira from './pages/CadastroEsteira';
 import Historico from './pages/Historico';
 import Manutencao from './pages/Manutencao';
 import Dashboard from './pages/Dashboard';
+import AnaliseDados from './pages/AnaliseDados';
 import BotaoTema from './components/BotaoTema';
 import './App.css';
 
@@ -45,6 +46,14 @@ export default function App() {
             element={
               <RotaProtegida>
                 <CadastroEsteira />
+              </RotaProtegida>
+            }
+          />
+          <Route
+            path="/analise"
+            element={
+              <RotaProtegida>
+                <AnaliseDados />
               </RotaProtegida>
             }
           />

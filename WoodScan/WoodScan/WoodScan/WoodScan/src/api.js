@@ -131,3 +131,18 @@ export function getDashboardManutencao(inicio, fim) {
   if (fim) parametros.set('fim', fim);
   return chamarApi(`/api/dashboard/manutencao?${parametros.toString()}`);
 }
+
+// Tipo da máquina (serra, guilhotina, laminadora): a Raspberry usa para criar o objeto certo
+export function definirTipoEsteira(esteiraId, tipo) {
+  return chamarApi(`/api/esteiras/${esteiraId}/tipo`, {
+    method: 'POST',
+    body: JSON.stringify({ tipo }),
+  });
+}
+
+// --- Análise de dados ---
+// Devolve { data, ultima_hora, esteiras: { esteira1: { brutas, descartadas,
+//   temperatura: { "25.3": 12 }, umidade: { ... }, laminas_por_hora: [24 números] } } }
+export function getAnalise(data) {
+  return chamarApi(`/api/analise?data=${data}`);
+}

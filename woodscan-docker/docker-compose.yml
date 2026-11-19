@@ -1,0 +1,51 @@
+# WoodScan - sobe o sistema inteiro com:  docker compose up -d --build
+#   site:      http://IP-DO-PC:8080
+#   Node-RED:  http://IP-DO-PC:1880   (a Raspberry Pi manda as leituras pra ca)
+#   MySQL:     porta 3307 (usuario root / senha woodscan)
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: woodscan-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: woodscan
+      TZ: America/Sao_Paulo
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pwoodscan"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  nodered:
+    build: ./nodered
+    container_name: woodscan-nodered
+    environment:
+      TZ: America/Sao_Paulo
+    volumes:
+      - nodered_data:/data
+      - C:/woodscan:/data/woodscan
+    ports:
+      - "1880:1880"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    container_name: woodscan-web
+    ports:
+      - "8080:80"
+    depends_on:
+      - nodered
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  nodered_data:

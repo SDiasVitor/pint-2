@@ -95,6 +95,9 @@ export default function Home() {
           <Link to="/dashboard" className="botao-secundario">
             Dashboard
           </Link>
+          <Link to="/analise" className="botao-secundario">
+            Análise de dados
+          </Link>
           <Link to="/historico" className="botao-secundario">
             Histórico
           </Link>
